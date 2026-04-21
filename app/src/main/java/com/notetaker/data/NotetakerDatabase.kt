@@ -5,12 +5,20 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 
+/**
+ * Schema is at v1 and will stay fluid until the first real release. The app has never
+ * been installed on any device, so there is no persisted v1 DB whose shape we need to
+ * preserve — any schema change during this phase can redefine v1 freely.
+ *
+ * `fallbackToDestructiveMigration(dropAllTables = true)` is the dev-phase safety net: if
+ * a developer sideloads a debug APK and the schema later changes, Room drops the local
+ * DB instead of bricking the app. **Before the first public release** we must remove the
+ * destructive fallback and start real migrations.
+ */
 @Database(
     entities = [Note::class, ChecklistItem::class],
-    version = 2,
+    version = 1,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -22,29 +30,6 @@ abstract class NotetakerDatabase : RoomDatabase() {
     companion object {
         private const val DB_NAME = "notetaker.db"
 
-        /**
-         * v1 -> v2 adds the unique (noteId, position) index on checklist_items. Any row
-         * pair that already collides from the pre-index race is de-duped (keeping the
-         * lowest id) before the index is created so the upgrade never aborts mid-way.
-         */
-        internal val MIGRATION_1_2: Migration = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    DELETE FROM checklist_items
-                    WHERE id NOT IN (
-                        SELECT MIN(id) FROM checklist_items GROUP BY noteId, position
-                    )
-                    """.trimIndent(),
-                )
-                db.execSQL(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
-                        "`index_checklist_items_noteId_position` " +
-                        "ON `checklist_items` (`noteId`, `position`)",
-                )
-            }
-        }
-
         @Volatile
         private var instance: NotetakerDatabase? = null
 
@@ -55,7 +40,7 @@ abstract class NotetakerDatabase : RoomDatabase() {
                     NotetakerDatabase::class.java,
                     DB_NAME,
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { instance = it }
             }
