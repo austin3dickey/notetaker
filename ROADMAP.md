@@ -85,7 +85,7 @@ Goal: open the app, create a note, add/check/uncheck/delete items, leave and ret
 - [ ] Security review: storage encryption, IPC surface, notification content
 - [ ] Performance pass on large notes (1000+ items)
 - [ ] Dependency audit + Dependabot config
-- [ ] **Freeze schema for release:** remove `fallbackToDestructiveMigration` from
-  `NotetakerDatabase` and start real `Migration` classes on every subsequent schema
-  change. Enable `exportSchema = true` + `room.schemaLocation` KSP arg so migrations
-  can be tested with `MigrationTestHelper`.
+- [ ] **Freeze schema for release:** destructive fallback is already gated to debug
+  builds, but every version bump between now and the first release must add a
+  `Migration` so release builds don't fail on open. Enable `exportSchema = true` +
+  `room.schemaLocation` KSP arg so migrations can be tested with `MigrationTestHelper`.
