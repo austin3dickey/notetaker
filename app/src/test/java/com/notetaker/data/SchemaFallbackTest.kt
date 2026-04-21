@@ -13,7 +13,9 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertThrows
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -30,9 +32,22 @@ import org.robolectric.RobolectricTestRunner
  */
 @RunWith(RobolectricTestRunner::class)
 class SchemaFallbackTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
+
+    @Before
+    fun setUp() {
+        NotetakerDatabase.resetForTest()
+        context.deleteDatabase(NotetakerDatabase.DB_NAME)
+    }
+
+    @After
+    fun tearDown() {
+        NotetakerDatabase.resetForTest()
+        context.deleteDatabase(NotetakerDatabase.DB_NAME)
+    }
+
     @Test
     fun `allowDestructiveMigration=true recovers from a mismatched on-disk schema`() = runTest {
-        val context = ApplicationProvider.getApplicationContext<Context>()
         val dbName = "fallback-on-${System.nanoTime()}.db"
         context.deleteDatabase(dbName)
 
@@ -62,7 +77,6 @@ class SchemaFallbackTest {
 
     @Test
     fun `allowDestructiveMigration=false fails loudly on a mismatched on-disk schema`() = runTest {
-        val context = ApplicationProvider.getApplicationContext<Context>()
         val dbName = "fallback-off-${System.nanoTime()}.db"
         context.deleteDatabase(dbName)
 
@@ -86,6 +100,23 @@ class SchemaFallbackTest {
         } finally {
             context.deleteDatabase(dbName)
         }
+    }
+
+    @Test
+    fun `get() wires the fallback through BuildConfig_DEBUG end-to-end`() = runTest {
+        // Tests always run against the debug variant, so BuildConfig.DEBUG == true.
+        // Seeding an incompatible DB at the real DB_NAME path and then calling get()
+        // proves that:
+        //   (a) get() delegates to build() at the production path, and
+        //   (b) the flag it threads in resolves to true in debug builds.
+        // A future regression that hardcoded `false` in get() would make this throw
+        // instead of returning an empty active-notes list.
+        seedLegacyDatabase(context, NotetakerDatabase.DB_NAME)
+
+        val db = NotetakerDatabase.get(context)
+        assertThat(db.noteDao().observeActive().first()).isEmpty()
+        val id = db.noteDao().insert(Note(title = "fresh", createdAt = 0L, updatedAt = 0L))
+        assertThat(db.noteDao().observeActive().first().single().id).isEqualTo(id)
     }
 
     private fun seedLegacyDatabase(context: Context, dbName: String) {

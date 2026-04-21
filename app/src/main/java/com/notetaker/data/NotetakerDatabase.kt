@@ -35,7 +35,7 @@ abstract class NotetakerDatabase : RoomDatabase() {
     abstract fun itemDao(): ChecklistItemDao
 
     companion object {
-        private const val DB_NAME = "notetaker.db"
+        internal const val DB_NAME = "notetaker.db"
 
         @Volatile
         private var instance: NotetakerDatabase? = null
@@ -69,6 +69,14 @@ abstract class NotetakerDatabase : RoomDatabase() {
                 builder.fallbackToDestructiveMigration(dropAllTables = true)
             }
             return builder.build()
+        }
+
+        /** Test hook — clears the cached singleton so each test exercises [get] cleanly. */
+        internal fun resetForTest() {
+            synchronized(this) {
+                instance?.close()
+                instance = null
+            }
         }
     }
 }
