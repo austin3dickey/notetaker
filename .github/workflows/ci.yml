@@ -44,3 +44,6 @@ jobs:
 
       - name: Assemble debug
         run: ./gradlew assembleDebug --no-daemon
+
+      - name: Assemble release (exercises R8 and resource shrinking)
+        run: ./gradlew assembleRelease --no-daemon

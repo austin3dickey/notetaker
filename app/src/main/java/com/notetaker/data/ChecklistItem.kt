@@ -23,7 +23,13 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("noteId")],
+    indices = [
+        Index("noteId"),
+        // Enforces the "stable global order" invariant at the DB layer: any path that
+        // inserts two items with the same position in a note will fail loudly rather
+        // than silently corrupt ordering.
+        Index(value = ["noteId", "position"], unique = true),
+    ],
 )
 data class ChecklistItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,

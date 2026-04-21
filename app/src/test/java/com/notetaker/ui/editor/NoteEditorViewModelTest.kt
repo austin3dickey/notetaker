@@ -32,7 +32,12 @@ class NoteEditorViewModelTest {
         db = Room.inMemoryDatabaseBuilder(context, NotetakerDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repository = NoteRepository(db.noteDao(), db.itemDao(), clock = { 0L })
+        repository = NoteRepository(
+            db = db,
+            noteDao = db.noteDao(),
+            itemDao = db.itemDao(),
+            clock = { 0L },
+        )
     }
 
     @After

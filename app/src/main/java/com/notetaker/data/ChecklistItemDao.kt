@@ -12,6 +12,9 @@ interface ChecklistItemDao {
     @Query("SELECT * FROM checklist_items WHERE noteId = :noteId ORDER BY position ASC")
     fun observeByNote(noteId: Long): Flow<List<ChecklistItem>>
 
+    @Query("SELECT * FROM checklist_items WHERE noteId = :noteId ORDER BY position ASC")
+    suspend fun getByNote(noteId: Long): List<ChecklistItem>
+
     @Query("SELECT * FROM checklist_items WHERE id = :id")
     suspend fun findById(id: Long): ChecklistItem?
 

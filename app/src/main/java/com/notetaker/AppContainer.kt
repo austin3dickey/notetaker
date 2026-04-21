@@ -12,6 +12,7 @@ class AppContainer(context: Context) {
     private val database = NotetakerDatabase.get(context)
 
     val noteRepository: NoteRepository = NoteRepository(
+        db = database,
         noteDao = database.noteDao(),
         itemDao = database.itemDao(),
     )

@@ -25,6 +25,7 @@ class NoteRepositoryTest {
             .allowMainThreadQueries()
             .build()
         repository = NoteRepository(
+            db = db,
             noteDao = db.noteDao(),
             itemDao = db.itemDao(),
             clock = { clockMs },
@@ -72,6 +73,24 @@ class NoteRepositoryTest {
         val items = repository.observeItems(id).first()
         assertThat(items.map { it.text }).containsExactly("a", "a-plus", "b", "c").inOrder()
         assertThat(items.map { it.position }).containsExactly(0, 1, 2, 3).inOrder()
+    }
+
+    @Test
+    fun `addItemAfter handles a long run of items without violating the unique index`() = runTest {
+        val id = repository.createNote()
+        repeat(6) { repository.appendItem(id, "item$it") }
+
+        // Each insert in the middle must shift all later items without a transient
+        // (noteId, position) collision.
+        repository.addItemAfter(id, afterPosition = 2, text = "X")
+        repository.addItemAfter(id, afterPosition = 0, text = "Y")
+
+        val items = repository.observeItems(id).first()
+        assertThat(items.map { it.text })
+            .containsExactly("item0", "Y", "item1", "item2", "X", "item3", "item4", "item5")
+            .inOrder()
+        assertThat(items.map { it.position }).isInOrder()
+        assertThat(items.map { it.position }.toSet().size).isEqualTo(items.size)
     }
 
     @Test

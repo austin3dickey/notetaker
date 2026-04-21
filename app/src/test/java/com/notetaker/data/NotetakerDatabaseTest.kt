@@ -1,6 +1,7 @@
 package com.notetaker.data
 
 import android.content.Context
+import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
@@ -8,6 +9,7 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -124,6 +126,42 @@ class NotetakerDatabaseTest {
             val persisted = noteDao.observeById(id).first()!!
             assertThat(persisted.color).isEqualTo(color)
         }
+    }
+
+    @Test
+    fun `unique index rejects duplicate (noteId, position)`() = runTest {
+        val noteId = noteDao.insert(note())
+        itemDao.insert(ChecklistItem(noteId = noteId, text = "first", position = 0))
+
+        assertThrows(SQLiteConstraintException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                itemDao.insert(ChecklistItem(noteId = noteId, text = "second", position = 0))
+            }
+        }
+    }
+
+    @Test
+    fun `same (noteId, position) across different notes is allowed`() = runTest {
+        val aId = noteDao.insert(note(title = "a"))
+        val bId = noteDao.insert(note(title = "b"))
+
+        itemDao.insert(ChecklistItem(noteId = aId, text = "a0", position = 0))
+        itemDao.insert(ChecklistItem(noteId = bId, text = "b0", position = 0))
+
+        assertThat(itemDao.observeByNote(aId).first()).hasSize(1)
+        assertThat(itemDao.observeByNote(bId).first()).hasSize(1)
+    }
+
+    @Test
+    fun `observeActive tiebreaks equal updatedAt by id DESC`() = runTest {
+        val older = noteDao.insert(note(title = "older", updatedAt = 100L))
+        val newerA = noteDao.insert(note(title = "newerA", updatedAt = 200L))
+        val newerB = noteDao.insert(note(title = "newerB", updatedAt = 200L))
+
+        val notes = noteDao.observeActive().first()
+
+        // Same timestamp -> higher id wins; then older note trails.
+        assertThat(notes.map { it.id }).containsExactly(newerB, newerA, older).inOrder()
     }
 
     @Test
