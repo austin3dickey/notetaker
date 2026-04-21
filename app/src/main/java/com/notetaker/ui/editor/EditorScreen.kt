@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -43,16 +41,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -78,7 +70,7 @@ fun EditorScreen(
         onItemTextChange = viewModel::updateItemText,
         onToggleItem = viewModel::toggleChecked,
         onDeleteItem = viewModel::deleteItem,
-        onEnterOnItem = { afterPos -> viewModel.addItemAfter(afterPos) },
+        onEnterOnItem = { afterPos, remainder -> viewModel.addItemAfter(afterPos, remainder) },
         onAppendItem = { viewModel.appendItem() },
         modifier = modifier,
     )
@@ -93,7 +85,7 @@ internal fun EditorScreenContent(
     onItemTextChange: (ChecklistItem, String) -> Unit,
     onToggleItem: (ChecklistItem) -> Unit,
     onDeleteItem: (ChecklistItem) -> Unit,
-    onEnterOnItem: (afterPosition: Int) -> Unit,
+    onEnterOnItem: (afterPosition: Int, remainder: String) -> Unit,
     onAppendItem: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -151,7 +143,7 @@ private fun LoadedEditor(
     onItemTextChange: (ChecklistItem, String) -> Unit,
     onToggleItem: (ChecklistItem) -> Unit,
     onDeleteItem: (ChecklistItem) -> Unit,
-    onEnterOnItem: (afterPosition: Int) -> Unit,
+    onEnterOnItem: (afterPosition: Int, remainder: String) -> Unit,
     onAppendItem: () -> Unit,
 ) {
     // When we add a new item after position P, we expect it to appear at position P+1.
@@ -176,9 +168,9 @@ private fun LoadedEditor(
                 onTextChange = { onItemTextChange(item, it) },
                 onToggle = { onToggleItem(item) },
                 onDelete = { onDeleteItem(item) },
-                onEnter = {
+                onEnter = { remainder ->
                     pendingFocusPosition = item.position + 1
-                    onEnterOnItem(item.position)
+                    onEnterOnItem(item.position, remainder)
                 },
             )
         }
@@ -220,18 +212,33 @@ private fun LoadedEditor(
     }
 }
 
+/**
+ * Invisible sentinel prefix. Soft keyboards on Android don't reliably deliver a key
+ * event for a backspace pressed on an already-empty field, so we keep a zero-width
+ * space at position 0 of each row's text. A backspace at the visual start of the
+ * field deletes the ZWSP instead, which does fire [BasicTextField.onValueChange] —
+ * and seeing the prefix gone is our signal that the user asked to delete the row.
+ */
+private const val ZWSP: String = "\u200B"
+
 @Composable
 private fun TitleField(title: String, onTitleChange: (String) -> Unit) {
-    var tfv by remember {
-        mutableStateOf(TextFieldValue(title, TextRange(title.length)))
+    var tfv by remember { mutableStateOf(TextFieldValue(title, TextRange(title.length))) }
+    // Sync with external updates — without this the field would display stale text
+    // after a title change from another writer (or after undo/redo in M2) and the
+    // next keystroke would clobber the newer value.
+    LaunchedEffect(title) {
+        if (tfv.text != title) tfv = TextFieldValue(title, TextRange(title.length))
     }
     BasicTextField(
         value = tfv,
-        onValueChange = {
-            tfv = it
-            onTitleChange(it.text)
+        onValueChange = { new ->
+            // Strip any newline a soft keyboard may inject (the title is always a
+            // single line; Enter here should do nothing rather than split into items).
+            val sanitized = if (new.text.contains('\n')) new.copy(text = new.text.replace("\n", "")) else new
+            tfv = sanitized
+            if (sanitized.text != title) onTitleChange(sanitized.text)
         },
-        singleLine = true,
         textStyle = LocalTextStyle.current.merge(MaterialTheme.typography.titleLarge),
         cursorBrush = androidx.compose.ui.graphics.SolidColor(LocalContentColor.current),
         decorationBox = { inner ->
@@ -261,13 +268,20 @@ private fun ChecklistRow(
     onTextChange: (String) -> Unit,
     onToggle: () -> Unit,
     onDelete: () -> Unit,
-    onEnter: () -> Unit,
+    onEnter: (remainder: String) -> Unit,
 ) {
-    // Local TextFieldValue so the cursor doesn't jump on every Flow-driven recomposition.
-    // Keyed by item.id so a different row (after delete/reorder) gets a fresh state.
     var tfv by remember(item.id) {
-        mutableStateOf(TextFieldValue(item.text, TextRange(item.text.length)))
+        mutableStateOf(TextFieldValue(ZWSP + item.text, TextRange(ZWSP.length + item.text.length)))
     }
+    // Sync with external updates so repository emissions for the same id don't get
+    // overwritten by stale local state on the next keystroke.
+    LaunchedEffect(item.id, item.text) {
+        val external = ZWSP + item.text
+        if (tfv.text.removePrefix(ZWSP) != item.text) {
+            tfv = TextFieldValue(external, TextRange(external.length))
+        }
+    }
+
     var focused by remember(item.id) { mutableStateOf(false) }
     val focusRequester = remember(item.id) { FocusRequester() }
 
@@ -298,33 +312,23 @@ private fun ChecklistRow(
 
         BasicTextField(
             value = tfv,
-            onValueChange = {
-                tfv = it
-                onTextChange(it.text)
+            onValueChange = { new ->
+                handleItemEdit(
+                    new = new,
+                    currentItemText = item.text,
+                    setLocal = { tfv = it },
+                    onTextChange = onTextChange,
+                    onEnter = onEnter,
+                    onBackspaceOnEmpty = onDelete,
+                )
             },
             textStyle = style,
             cursorBrush = androidx.compose.ui.graphics.SolidColor(textColor),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { onEnter() }),
             modifier = Modifier
                 .weight(1f)
                 .testTag("item-text-${item.id}")
                 .focusRequester(focusRequester)
-                .onFocusChanged { focused = it.isFocused }
-                .onPreviewKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    when (event.key) {
-                        Key.Enter, Key.NumPadEnter -> {
-                            onEnter()
-                            true
-                        }
-                        Key.Backspace -> if (tfv.text.isEmpty()) {
-                            onDelete()
-                            true
-                        } else false
-                        else -> false
-                    }
-                },
+                .onFocusChanged { focused = it.isFocused },
         )
 
         if (focused) {
@@ -343,6 +347,54 @@ private fun ChecklistRow(
             Spacer(Modifier.width(DELETE_ICON_SIZE))
         }
     }
+}
+
+/**
+ * Routes a raw [TextFieldValue] emission from a checklist row into one of four outcomes.
+ * Keeping this a top-level function (rather than a lambda inside the composable) makes
+ * the control flow unit-testable and keeps [ChecklistRow] focused on layout.
+ */
+private fun handleItemEdit(
+    new: TextFieldValue,
+    currentItemText: String,
+    setLocal: (TextFieldValue) -> Unit,
+    onTextChange: (String) -> Unit,
+    onEnter: (remainder: String) -> Unit,
+    onBackspaceOnEmpty: () -> Unit,
+) {
+    if (!new.text.startsWith(ZWSP)) {
+        // The ZWSP prefix was deleted: either the user backspaced on an empty row
+        // (delete the row) or they edited at position 0 (rebuild with ZWSP intact).
+        if (new.text.isEmpty()) {
+            onBackspaceOnEmpty()
+            return
+        }
+        val corrected = ZWSP + new.text
+        setLocal(
+            TextFieldValue(
+                text = corrected,
+                selection = TextRange(new.selection.start + 1, new.selection.end + 1),
+            ),
+        )
+        if (new.text != currentItemText) onTextChange(new.text)
+        return
+    }
+
+    if (new.text.contains('\n')) {
+        val withoutPrefix = new.text.removePrefix(ZWSP)
+        val newlineIdx = withoutPrefix.indexOf('\n')
+        val before = withoutPrefix.substring(0, newlineIdx)
+        val after = withoutPrefix.substring(newlineIdx + 1)
+        val keep = ZWSP + before
+        setLocal(TextFieldValue(keep, TextRange(keep.length)))
+        if (before != currentItemText) onTextChange(before)
+        onEnter(after)
+        return
+    }
+
+    setLocal(new)
+    val display = new.text.removePrefix(ZWSP)
+    if (display != currentItemText) onTextChange(display)
 }
 
 private val DELETE_ICON_SIZE = 48.dp
