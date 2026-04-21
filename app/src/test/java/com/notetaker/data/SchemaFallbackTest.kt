@@ -10,6 +10,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import com.notetaker.BuildConfig
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -104,19 +105,25 @@ class SchemaFallbackTest {
 
     @Test
     fun `get() wires the fallback through BuildConfig_DEBUG end-to-end`() = runTest {
-        // Tests always run against the debug variant, so BuildConfig.DEBUG == true.
-        // Seeding an incompatible DB at the real DB_NAME path and then calling get()
-        // proves that:
-        //   (a) get() delegates to build() at the production path, and
-        //   (b) the flag it threads in resolves to true in debug builds.
-        // A future regression that hardcoded `false` in get() would make this throw
-        // instead of returning an empty active-notes list.
+        // Branches on the active build variant so the same test also runs against
+        // `testReleaseUnitTest`, where BuildConfig.DEBUG is false. Together this locks
+        // in *both* directions of the production wiring: a future regression that
+        // hardcoded `true` in get() would fail the release run, and one that hardcoded
+        // `false` would fail the debug run.
         seedLegacyDatabase(context, NotetakerDatabase.DB_NAME)
 
         val db = NotetakerDatabase.get(context)
-        assertThat(db.noteDao().observeActive().first()).isEmpty()
-        val id = db.noteDao().insert(Note(title = "fresh", createdAt = 0L, updatedAt = 0L))
-        assertThat(db.noteDao().observeActive().first().single().id).isEqualTo(id)
+        if (BuildConfig.DEBUG) {
+            // Debug: destructive fallback fires, the incompatible DB is wiped.
+            assertThat(db.noteDao().observeActive().first()).isEmpty()
+            val id = db.noteDao().insert(Note(title = "fresh", createdAt = 0L, updatedAt = 0L))
+            assertThat(db.noteDao().observeActive().first().single().id).isEqualTo(id)
+        } else {
+            // Release: strict mode, Room refuses to open an incompatible DB.
+            assertThrows(IllegalStateException::class.java) {
+                runBlocking { db.noteDao().observeActive().first() }
+            }
+        }
     }
 
     private fun seedLegacyDatabase(context: Context, dbName: String) {

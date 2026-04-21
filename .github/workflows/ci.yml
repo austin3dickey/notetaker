@@ -39,8 +39,11 @@ jobs:
       - name: Lint
         run: ./gradlew lintDebug --no-daemon
 
-      - name: Unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+      - name: Unit tests (debug variant — BuildConfig.DEBUG = true)
+        run: ./gradlew testDebugUnitTest -PtestBuildType=debug --no-daemon
+
+      - name: Unit tests (release variant — BuildConfig.DEBUG = false)
+        run: ./gradlew testReleaseUnitTest -PtestBuildType=release --no-daemon
 
       - name: Assemble debug
         run: ./gradlew assembleDebug --no-daemon

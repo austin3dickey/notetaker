@@ -57,6 +57,13 @@ android {
         )
     }
 
+    // AGP generates a unit-test task only for `testBuildType`. The schema-fallback test
+    // asserts different behavior under BuildConfig.DEBUG true vs false, so CI runs
+    // tests twice with `-PtestBuildType=debug` and `-PtestBuildType=release` to cover
+    // both branches end-to-end.
+    @Suppress("UnstableApiUsage")
+    testBuildType = (project.findProperty("testBuildType") as String?) ?: "debug"
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
