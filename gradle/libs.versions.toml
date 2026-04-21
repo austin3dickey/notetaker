@@ -5,13 +5,13 @@ kotlin = "2.2.10"
 ksp = "2.2.10-2.0.2"
 
 # AndroidX core
-activity-compose = "1.12.0"
-core-ktx = "1.17.0"
+activity-compose = "1.13.0"
+core-ktx = "1.18.0"
 lifecycle = "2.10.0"
-navigation-compose = "2.10.0"
+navigation-compose = "2.9.7"
 
 # Compose
-compose-bom = "2026.03.00"
+compose-bom = "2026.03.01"
 
 # Room
 room = "2.8.0"
@@ -24,7 +24,7 @@ junit = "4.13.2"
 androidx-test-core = "1.7.0"
 androidx-test-ext = "1.3.0"
 espresso = "3.7.0"
-robolectric = "4.15.1"
+robolectric = "4.16.1"
 turbine = "1.2.1"
 truth = "1.4.5"
 
