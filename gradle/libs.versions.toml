@@ -14,7 +14,7 @@ navigation-compose = "2.9.7"
 compose-bom = "2026.03.01"
 
 # Room
-room = "2.8.0"
+room = "2.8.4"
 
 # Coroutines
 coroutines = "1.10.2"
