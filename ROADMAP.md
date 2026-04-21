@@ -5,34 +5,56 @@ so the app stays demo-able at every stop. Check items off as they ship.
 
 See `CLAUDE.md` for the full feature spec.
 
+## Current status
+
+M0 done. M1 data/logic layer done. **Next up: M1 UI** — Compose editor, overview screen,
+navigation.
+
 ## Tooling baseline (shared across all milestones)
 
-- Kotlin 2.2.10 (bundled with AGP 9), Jetpack Compose (BOM 2026.03.00), Material 3
-- AGP 9.1.1, Gradle 9.1.0, JDK 17
+- Kotlin 2.3.20, Jetpack Compose (BOM 2026.03.01), Material 3
+- AGP 9.1.1, Gradle 9.4.1, JDK 17
 - `compileSdk` 36, `minSdk` 24
-- Room 2.8.0 for persistence
+- Room 2.8.4 (KSP 2.3.6)
 - MVVM: `ViewModel` + `StateFlow`, repository layer
-- Tests: JUnit 4 + Robolectric (JVM), Compose UI tests (instrumented), Turbine for Flow
-- CI: GitHub Actions — lint, unit tests, `assembleDebug`
+- Tests: JUnit 4 + Robolectric (JVM), Turbine for Flow, Compose UI tests for screens (later)
+- CI: GitHub Actions — lint, unit tests across both debug and release variants (via
+  `-PtestBuildType=…`), `assembleDebug`, `assembleRelease`. SHA-pinned actions, grouped
+  Dependabot updates with a 7-day cooldown.
 
-## M0 — Project scaffolding
+## M0 — Project scaffolding ✓
 
-- [ ] Gradle project with version catalog
-- [ ] Empty Compose Activity renders
-- [ ] `.gitignore`, CI workflow green
-- [ ] One passing unit test to prove the test harness works
+- [x] Gradle project with version catalog
+- [x] Empty Compose Activity renders
+- [x] `.gitignore`, CI workflow green
+- [x] Smoke unit test proves the harness works
+- [x] `assembleRelease` in CI (R8 + resource shrinking exercised on every PR)
+- [x] Release-variant unit tests in CI so both `BuildConfig.DEBUG` paths are covered
 
 ## M1 — Local checklist notes, editable end-to-end
 
 Goal: open the app, create a note, add/check/uncheck/delete items, leave and return, everything persists.
 
-- [ ] `Note` + `ChecklistItem` Room entities, DAO, in-memory DB tests
-- [ ] `NoteRepository` exposing `Flow<List<Note>>` and `Flow<NoteWithItems>`
-- [ ] `NoteEditorViewModel` with add/edit/check/delete/reorder-within-section
-- [ ] Editor UI: title field, item rows with checkbox + text field, Enter adds, Backspace on blank deletes, X icon deletes
-- [ ] Checked items section at bottom, greyed text, idempotent check/uncheck ordering
-- [ ] Long items wrap and center vertically with the checkbox
-- [ ] Overview screen: list of notes with title + preview
+### Data / logic layer ✓
+
+- [x] `Note` + `ChecklistItem` Room entities, DAOs, Robolectric DB tests
+- [x] Unique `(noteId, position)` index + `Room.withTransaction` around every item
+  mutation so ordering invariants can't break under concurrent writes, and `updatedAt`
+  is stamped atomically with the item change
+- [x] `id DESC` tiebreaker on note queries for deterministic overview ordering
+- [x] `NoteRepository` exposing `Flow<List<Note>>` / `Flow<List<ChecklistItem>>`
+- [x] `NoteEditorViewModel` with add/edit/check/delete, `EditorState` split into
+      unchecked/checked sections; check/uncheck is idempotent of `position`
+- [x] Schema-fallback policy: `fallbackToDestructiveMigration` gated to `BuildConfig.DEBUG`
+      so release builds fail loudly rather than wiping notes
+
+### UI layer
+
+- [ ] Editor: title field, item rows with checkbox + text field, Enter adds,
+      Backspace on blank deletes, X icon deletes
+- [ ] Checked items section at bottom, greyed text
+- [ ] Long items wrap and stay vertically centered with the checkbox
+- [ ] Overview: list of notes with title + preview
 - [ ] Navigation (overview ↔ editor) + "new note" FAB
 
 ## M2 — Local organization
@@ -84,8 +106,32 @@ Goal: open the app, create a note, add/check/uncheck/delete items, leave and ret
 - [ ] Screen-reader ordering for checked section
 - [ ] Security review: storage encryption, IPC surface, notification content
 - [ ] Performance pass on large notes (1000+ items)
-- [ ] Dependency audit + Dependabot config
+- [ ] Periodic dependency audit (Dependabot handles ongoing bumps; CVE audit is separate)
 - [ ] **Freeze schema for release:** destructive fallback is already gated to debug
-  builds, but every version bump between now and the first release must add a
-  `Migration` so release builds don't fail on open. Enable `exportSchema = true` +
-  `room.schemaLocation` KSP arg so migrations can be tested with `MigrationTestHelper`.
+      builds, but every version bump between now and the first release must add a
+      `Migration` so release builds don't fail on open. Enable `exportSchema = true` +
+      `room.schemaLocation` KSP arg so migrations can be tested with `MigrationTestHelper`.
+- [ ] Release signing config + signed `assembleRelease` in CI (currently unsigned)
+
+## Notes / deferred items
+
+Small things that aren't milestone work but shouldn't get lost. Revisit next time you're
+touching the adjacent code.
+
+- **KSP DSL workaround.** `android.disallowKotlinSourceSets=false` in `gradle.properties`
+  exists because KSP's Gradle plugin registered generated sources via the legacy
+  `kotlin.sourceSets` DSL that AGP 9 rejects. KSP 2.3.6's notes claim improved AGP 9
+  integration; next time we touch build wiring, try removing the flag and see if the
+  build stays green.
+- **Schema export.** `exportSchema = false` today. Flip to `true` alongside
+  `room.schemaLocation` when the release-migration story lands (M6), so
+  `MigrationTestHelper` can cover v→v+1 rather than the ad-hoc raw-SQLite setup we'd
+  otherwise write.
+- **BuildConfig-test plumbing.** `testBuildType` is driven by a `-PtestBuildType` property
+  because AGP only generates unit-test tasks for one variant at a time. If we add more
+  variant-sensitive tests, revisit whether a matrix job in CI scales better than the
+  current two-step run.
+- **Sharing transport.** M5 is blocked on picking a sync mechanism (see the callout in
+  M5). Resolve this before breaking ground on the sharing data model.
+- **Release APK is unsigned.** CI builds it, but we can't distribute it. Set up a signing
+  config sourced from GitHub secrets before the first beta.
