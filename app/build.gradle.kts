@@ -103,6 +103,12 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.room.testing)
     testImplementation(libs.androidx.test.core.ktx)
+    // Compose UI tests run on Robolectric so they execute in CI alongside the other
+    // JVM unit tests (CI doesn't run instrumented tests). They live in src/testDebug
+    // because compose-ui-test-manifest (debugImplementation) only merges into the
+    // debug variant — running them against release would fail activity resolution.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.androidx.test.ext.junit)

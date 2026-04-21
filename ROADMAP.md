@@ -7,8 +7,7 @@ See `CLAUDE.md` for the full feature spec.
 
 ## Current status
 
-M0 done. M1 data/logic layer done. **Next up: M1 UI** — Compose editor, overview screen,
-navigation.
+M0 and M1 done. **Next up: M2** — note-level undo/redo, color picker, archive, delete.
 
 ## Tooling baseline (shared across all milestones)
 
@@ -48,14 +47,17 @@ Goal: open the app, create a note, add/check/uncheck/delete items, leave and ret
 - [x] Schema-fallback policy: `fallbackToDestructiveMigration` gated to `BuildConfig.DEBUG`
       so release builds fail loudly rather than wiping notes
 
-### UI layer
+### UI layer ✓
 
-- [ ] Editor: title field, item rows with checkbox + text field, Enter adds,
-      Backspace on blank deletes, X icon deletes
-- [ ] Checked items section at bottom, greyed text
-- [ ] Long items wrap and stay vertically centered with the checkbox
-- [ ] Overview: list of notes with title + preview
-- [ ] Navigation (overview ↔ editor) + "new note" FAB
+- [x] Editor: title field, item rows with checkbox + text field, Enter adds,
+      Backspace on blank deletes, X icon deletes (appears on focus)
+- [x] Checked items section at bottom, greyed text with line-through
+- [x] Long items wrap and stay vertically centered with the checkbox (Row +
+      `Alignment.CenterVertically`)
+- [x] Overview: list of notes with title + unchecked-item preview
+- [x] Navigation (overview ↔ editor) + "new note" FAB
+- [x] Compose UI tests on Robolectric (`src/testDebug` — `compose-ui-test-manifest`
+      only merges into the debug variant)
 
 ## M2 — Local organization
 
