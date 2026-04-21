@@ -1,0 +1,156 @@
+package com.notetaker.data
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import app.cash.turbine.test
+import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+
+@RunWith(RobolectricTestRunner::class)
+class NotetakerDatabaseTest {
+    private lateinit var db: NotetakerDatabase
+    private lateinit var noteDao: NoteDao
+    private lateinit var itemDao: ChecklistItemDao
+
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        db = Room.inMemoryDatabaseBuilder(context, NotetakerDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        noteDao = db.noteDao()
+        itemDao = db.itemDao()
+    }
+
+    @After
+    fun tearDown() {
+        db.close()
+    }
+
+    @Test
+    fun `insert and observe active notes`() = runTest {
+        val id = noteDao.insert(note(title = "groceries"))
+        val notes = noteDao.observeActive().first()
+        assertThat(notes).hasSize(1)
+        assertThat(notes.single().id).isEqualTo(id)
+        assertThat(notes.single().title).isEqualTo("groceries")
+    }
+
+    @Test
+    fun `archived notes are excluded from active query`() = runTest {
+        val activeId = noteDao.insert(note(title = "active"))
+        noteDao.insert(note(title = "archived", archived = true))
+
+        val active = noteDao.observeActive().first()
+        assertThat(active.map { it.id }).containsExactly(activeId)
+
+        val archived = noteDao.observeArchived().first()
+        assertThat(archived.map { it.title }).containsExactly("archived")
+    }
+
+    @Test
+    fun `active notes are ordered by updatedAt desc`() = runTest {
+        val older = noteDao.insert(note(title = "older", updatedAt = 100L))
+        val newer = noteDao.insert(note(title = "newer", updatedAt = 200L))
+
+        val notes = noteDao.observeActive().first()
+
+        assertThat(notes.map { it.id }).containsExactly(newer, older).inOrder()
+    }
+
+    @Test
+    fun `checklist items are ordered by position, not insertion order`() = runTest {
+        val noteId = noteDao.insert(note())
+
+        itemDao.insert(ChecklistItem(noteId = noteId, text = "b", position = 1))
+        itemDao.insert(ChecklistItem(noteId = noteId, text = "a", position = 0))
+        itemDao.insert(ChecklistItem(noteId = noteId, text = "c", position = 2))
+
+        val items = itemDao.observeByNote(noteId).first()
+
+        assertThat(items.map { it.text }).containsExactly("a", "b", "c").inOrder()
+    }
+
+    @Test
+    fun `nextPosition starts at zero and grows with items`() = runTest {
+        val noteId = noteDao.insert(note())
+
+        assertThat(itemDao.nextPosition(noteId)).isEqualTo(0)
+
+        itemDao.insert(ChecklistItem(noteId = noteId, text = "x", position = 0))
+        assertThat(itemDao.nextPosition(noteId)).isEqualTo(1)
+
+        itemDao.insert(ChecklistItem(noteId = noteId, text = "y", position = 4))
+        assertThat(itemDao.nextPosition(noteId)).isEqualTo(5)
+    }
+
+    @Test
+    fun `position is preserved when item is checked then unchecked`() = runTest {
+        val noteId = noteDao.insert(note())
+        val itemId = itemDao.insert(ChecklistItem(noteId = noteId, text = "milk", position = 2))
+
+        val original = itemDao.findById(itemId)!!
+        itemDao.update(original.copy(checked = true))
+        itemDao.update(original.copy(checked = false))
+
+        val restored = itemDao.findById(itemId)!!
+        assertThat(restored.position).isEqualTo(2)
+        assertThat(restored.checked).isFalse()
+    }
+
+    @Test
+    fun `deleting note cascades to checklist items`() = runTest {
+        val noteId = noteDao.insert(note())
+        itemDao.insert(ChecklistItem(noteId = noteId, text = "a", position = 0))
+        itemDao.insert(ChecklistItem(noteId = noteId, text = "b", position = 1))
+
+        val target = noteDao.observeById(noteId).first()!!
+        noteDao.delete(target)
+
+        assertThat(itemDao.observeByNote(noteId).first()).isEmpty()
+    }
+
+    @Test
+    fun `color type converter round-trips all variants`() = runTest {
+        NoteColor.entries.forEach { color ->
+            val id = noteDao.insert(note(title = color.name, color = color))
+            val persisted = noteDao.observeById(id).first()!!
+            assertThat(persisted.color).isEqualTo(color)
+        }
+    }
+
+    @Test
+    fun `observeById emits updates when note changes`() = runTest {
+        val noteId = noteDao.insert(note(title = "v1"))
+
+        noteDao.observeById(noteId).test {
+            assertThat(awaitItem()?.title).isEqualTo("v1")
+
+            noteDao.update(noteDao.observeById(noteId).first()!!.copy(title = "v2"))
+            assertThat(awaitItem()?.title).isEqualTo("v2")
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    private fun note(
+        title: String = "untitled",
+        color: NoteColor = NoteColor.NONE,
+        archived: Boolean = false,
+        createdAt: Long = 0L,
+        updatedAt: Long = 0L,
+    ) = Note(
+        title = title,
+        color = color,
+        archived = archived,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )
+}
