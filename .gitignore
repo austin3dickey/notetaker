@@ -1,0 +1,29 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/**/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.cxx/
+
+# Android SDK / local config
+local.properties
+*.keystore
+*.jks
+release/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.hprof
+/tmp/
+
+# Kotlin
+.kotlin/

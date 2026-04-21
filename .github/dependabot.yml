@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      androidx:
+        patterns: ["androidx.*"]
+      compose:
+        patterns: ["androidx.compose*", "androidx.activity*"]
+      kotlin:
+        patterns: ["org.jetbrains.kotlin*", "com.google.devtools.ksp*"]
+      test:
+        patterns:
+          - "junit*"
+          - "org.robolectric*"
+          - "app.cash.turbine*"
+          - "com.google.truth*"
