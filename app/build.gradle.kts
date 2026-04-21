@@ -43,6 +43,9 @@ android {
 
     buildFeatures {
         compose = true
+        // BuildConfig.DEBUG drives the schema destructive-fallback policy in
+        // NotetakerDatabase — tie it to the build variant, not to runtime flags.
+        buildConfig = true
     }
 
     packaging {
@@ -79,6 +82,7 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
+    kspTest(libs.room.compiler)
 
     implementation(libs.kotlinx.coroutines.android)
 
