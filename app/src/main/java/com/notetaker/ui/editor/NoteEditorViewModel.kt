@@ -9,12 +9,9 @@ import com.notetaker.data.Note
 import com.notetaker.data.NoteColor
 import com.notetaker.data.NoteRepository
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -23,11 +20,6 @@ class NoteEditorViewModel(
     private val repository: NoteRepository,
     private val externalScope: CoroutineScope,
 ) : ViewModel() {
-
-    // Buffered so a delete emitted just before the UI resubscribes (e.g. during a
-    // configuration change) is still delivered once the new LaunchedEffect attaches.
-    private val _events = Channel<EditorEvent>(capacity = Channel.BUFFERED)
-    val events: Flow<EditorEvent> = _events.receiveAsFlow()
 
     val state: StateFlow<EditorState> = combine(
         repository.observeNote(noteId),
@@ -79,14 +71,14 @@ class NoteEditorViewModel(
     /**
      * Deletes the owning note. Runs in [externalScope] (the application scope) so
      * the write survives the ViewModel being cleared — if the user confirms delete
-     * and then back-navigates before the event lands, [viewModelScope] would cancel
-     * mid-transaction and the note would still exist. Completion is announced via
-     * [events] so the UI can pop the back stack only after the delete is durable.
+     * and then back-navigates before the transaction commits, [viewModelScope]
+     * would cancel mid-delete and the note would still exist. Completion is
+     * observed by the UI through the state flow flipping to [EditorState.NotFound]
+     * once Room commits, so the screen can pop on that transition.
      */
     fun deleteNote() {
         externalScope.launch {
             repository.deleteNote(noteId)
-            _events.send(EditorEvent.Deleted)
         }
     }
 
@@ -122,9 +114,4 @@ sealed interface EditorState {
         val unchecked: List<ChecklistItem>,
         val checked: List<ChecklistItem>,
     ) : EditorState
-}
-
-/** One-shot events the editor screen should react to (e.g. navigate away). */
-sealed interface EditorEvent {
-    data object Deleted : EditorEvent
 }

@@ -159,7 +159,10 @@ class NoteEditorViewModelTest {
     }
 
     @Test
-    fun `deleteNote removes the note and emits a Deleted event`() = runTest {
+    fun `deleteNote removes the note and state transitions to NotFound`() = runTest {
+        // Completion is observed through the state flow: the UI pops when it sees
+        // Loaded → NotFound. Runs the delete on an external scope so the write
+        // would still commit even if viewModelScope were cancelled.
         val noteId = repository.createNote(title = "gone")
         val vm = NoteEditorViewModel(
             noteId = noteId,
@@ -167,34 +170,12 @@ class NoteEditorViewModelTest {
             externalScope = backgroundScope,
         )
 
-        vm.events.test {
+        vm.state.test {
+            awaitLoaded()
+
             vm.deleteNote()
-            assertThat(awaitItem()).isEqualTo(EditorEvent.Deleted)
-            cancelAndIgnoreRemainingEvents()
-        }
-        assertThat(repository.observeNote(noteId).first()).isNull()
-    }
 
-    @Test
-    fun `deleteNote survives a late events subscriber`() = runTest {
-        // Buffered channel guarantees: the UI can re-subscribe (e.g. after a
-        // configuration change) and still see the Deleted event that was emitted
-        // while no one was collecting. Without buffering, the event would be
-        // dropped and the screen would never pop.
-        val noteId = repository.createNote(title = "gone")
-        val vm = NoteEditorViewModel(
-            noteId = noteId,
-            repository = repository,
-            externalScope = backgroundScope,
-        )
-
-        vm.deleteNote()
-        // Let the launched coroutine run to completion so the event lands in the
-        // channel before anyone subscribes.
-        testScheduler.advanceUntilIdle()
-
-        vm.events.test {
-            assertThat(awaitItem()).isEqualTo(EditorEvent.Deleted)
+            assertThat(awaitSettled()).isEqualTo(EditorState.NotFound)
             cancelAndIgnoreRemainingEvents()
         }
         assertThat(repository.observeNote(noteId).first()).isNull()

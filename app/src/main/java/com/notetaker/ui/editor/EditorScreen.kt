@@ -69,18 +69,7 @@ fun EditorScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    // Hold a stable pointer to the latest onBack so our effect doesn't need to be
-    // keyed on it — keying on onBack would restart the events collector on every
-    // recomposition and risk missing a Deleted event emitted in that window.
-    val currentOnBack by rememberUpdatedState(onBack)
-    LaunchedEffect(viewModel) {
-        viewModel.events.collect { event ->
-            when (event) {
-                EditorEvent.Deleted -> currentOnBack()
-            }
-        }
-    }
-    AutoPopOnNoteRemoval(state = state, onPop = currentOnBack)
+    AutoPopOnNoteRemoval(state = state, onPop = onBack)
     EditorScreenContent(
         state = state,
         onBack = onBack,
