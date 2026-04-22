@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
+import com.notetaker.data.NoteColor
 import com.notetaker.data.NoteRepository
 import com.notetaker.data.NotetakerDatabase
 import com.notetaker.testing.MainDispatcherRule
@@ -103,6 +104,21 @@ class NoteOverviewViewModelTest {
         vm.state.test {
             val loaded = awaitLoadedMatching { it.notes.isNotEmpty() }
             assertThat(loaded.notes.map { it.id }).containsExactly(active)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `summary carries the note color for card rendering`() = runTest {
+        val plain = repository.createNote(title = "plain")
+        val tinted = repository.createNote(title = "tinted", color = NoteColor.BLUE)
+
+        val vm = NoteOverviewViewModel(repository)
+
+        vm.state.test {
+            val loaded = awaitLoadedMatching { it.notes.size == 2 }
+            assertThat(loaded.notes.single { it.id == plain }.color).isEqualTo(NoteColor.NONE)
+            assertThat(loaded.notes.single { it.id == tinted }.color).isEqualTo(NoteColor.BLUE)
             cancelAndIgnoreRemainingEvents()
         }
     }

@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performTextReplacement
 import com.google.common.truth.Truth.assertThat
 import com.notetaker.data.ChecklistItem
 import com.notetaker.data.Note
+import com.notetaker.data.NoteColor
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +42,7 @@ class EditorScreenTest {
         onDeleteItem: (ChecklistItem) -> Unit = {},
         onEnterOnItem: (Int, String) -> Unit = { _, _ -> },
         onAppendItem: () -> Unit = {},
+        onColorChange: (NoteColor) -> Unit = {},
     ) {
         composeRule.setContent {
             EditorScreenContent(
@@ -52,6 +54,7 @@ class EditorScreenTest {
                 onDeleteItem = onDeleteItem,
                 onEnterOnItem = onEnterOnItem,
                 onAppendItem = onAppendItem,
+                onColorChange = onColorChange,
             )
         }
     }
@@ -223,6 +226,42 @@ class EditorScreenTest {
 
         assertThat(deleted).isNull()
         assertThat(edits.last()).isEqualTo(1L to "")
+    }
+
+    @Test
+    fun color_picker_button_is_not_shown_when_not_loaded() {
+        stubContent(EditorState.NotFound)
+        composeRule.onNodeWithTag("color-picker-button").assertDoesNotExist()
+    }
+
+    @Test
+    fun selecting_a_color_invokes_onColorChange_and_dismisses_menu() {
+        val colors = mutableListOf<NoteColor>()
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            onColorChange = { colors += it },
+        )
+
+        composeRule.onNodeWithTag("color-picker-button").performClick()
+        composeRule.onNodeWithTag("color-swatch-YELLOW").performClick()
+
+        assertThat(colors).containsExactly(NoteColor.YELLOW)
+        // Menu should close after selection so the swatch isn't hanging around.
+        composeRule.onNodeWithTag("color-swatch-YELLOW").assertDoesNotExist()
+    }
+
+    @Test
+    fun color_picker_exposes_a_swatch_for_every_color_option() {
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+        )
+
+        composeRule.onNodeWithTag("color-picker-button").performClick()
+
+        NoteColor.entries.forEach { color ->
+            composeRule.onNodeWithTag("color-swatch-${color.name}").assertIsDisplayed()
+        }
     }
 
     @Test

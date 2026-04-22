@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
+import com.notetaker.data.NoteColor
 import com.notetaker.data.NoteRepository
 import com.notetaker.data.NotetakerDatabase
 import com.notetaker.testing.MainDispatcherRule
@@ -118,6 +119,22 @@ class NoteEditorViewModelTest {
 
             val loaded = awaitLoadedMatching { it.unchecked.size == 3 }
             assertThat(loaded.unchecked.map { it.text }).containsExactly("a", "b", "c").inOrder()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `setColor updates the note color in state`() = runTest {
+        val noteId = repository.createNote(title = "t")
+        val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
+
+        vm.state.test {
+            assertThat(awaitLoaded().note.color).isEqualTo(NoteColor.NONE)
+
+            vm.setColor(NoteColor.YELLOW)
+
+            val updated = awaitLoadedMatching { it.note.color == NoteColor.YELLOW }
+            assertThat(updated.note.color).isEqualTo(NoteColor.YELLOW)
             cancelAndIgnoreRemainingEvents()
         }
     }
