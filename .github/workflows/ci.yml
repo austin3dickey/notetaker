@@ -14,9 +14,17 @@ concurrency:
 
 jobs:
   build:
-    name: build & test
+    name: build & test (${{ matrix.variant }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: debug
+            gradle-tasks: lintDebug testDebugUnitTest assembleDebug
+          - variant: release
+            gradle-tasks: testReleaseUnitTest assembleRelease
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -28,25 +36,37 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699  # v4.0.1
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      - name: Lint
-        run: ./gradlew lintDebug --no-daemon
+      # Debug variant runs lint + unit tests + assemble; release variant runs unit
+      # tests + assemble (exercises R8 and resource shrinking). testBuildType must
+      # match the test task — AGP only generates the unit-test task for one
+      # variant at a time.
+      - name: Build & test
+        env:
+          GRADLE_TASKS: ${{ matrix.gradle-tasks }}
+          BUILD_TYPE: ${{ matrix.variant }}
+        run: |
+          read -ra tasks <<< "$GRADLE_TASKS"
+          ./gradlew "${tasks[@]}" -PtestBuildType="$BUILD_TYPE" --no-daemon
 
-      - name: Unit tests (debug variant — BuildConfig.DEBUG = true)
-        run: ./gradlew testDebugUnitTest -PtestBuildType=debug --no-daemon
-
-      - name: Unit tests (release variant — BuildConfig.DEBUG = false)
-        run: ./gradlew testReleaseUnitTest -PtestBuildType=release --no-daemon
-
-      - name: Assemble debug
-        run: ./gradlew assembleDebug --no-daemon
-
-      - name: Assemble release (exercises R8 and resource shrinking)
-        run: ./gradlew assembleRelease --no-daemon
+  # Aggregator — branch protection requires this single check, so matrix shape
+  # can change freely without touching protection rules.
+  ci-status:
+    name: build & test
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Verify matrix succeeded
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          if [[ "$BUILD_RESULT" != "success" ]]; then
+            echo "build matrix did not succeed: $BUILD_RESULT"
+            exit 1
+          fi

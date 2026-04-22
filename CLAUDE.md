@@ -49,6 +49,7 @@ An Android app for people to share to-do lists.
 
 - Test-driven development is preferred; first, create tests for a feature, and then work on it until the tests succeed
 - Commit after every turn!
+- Don't commit directly to main
 - After each commit, the post-commit hook enqueues a roborev review in the
   background. Don't wait for me to ask — after every commit, run `roborev
   wait` (it blocks on the review; exits 0 on PASS, non-zero on FAIL or job
@@ -69,9 +70,12 @@ Common tasks (all run from the repo root; add `--no-daemon` to match CI):
 | Lint | `./gradlew lintDebug --no-daemon` |
 | Assemble both APKs (also exercises R8 on release) | `./gradlew assembleDebug assembleRelease --no-daemon` |
 
-CI runs exactly this set (`.github/workflows/ci.yml`), so running them locally
-before pushing reproduces CI. `testBuildType` must match the `test*UnitTest` task
-— AGP only generates the unit-test task for one variant at a time.
+CI (`.github/workflows/ci.yml`) splits these across two parallel matrix jobs
+keyed on `testBuildType`: the `debug` leg runs `lintDebug`, `testDebugUnitTest`,
+and `assembleDebug`; the `release` leg runs `testReleaseUnitTest` and
+`assembleRelease`. Running the full table above locally reproduces both legs.
+`testBuildType` must match the `test*UnitTest` task — AGP only generates the
+unit-test task for one variant at a time.
 
 Compose UI tests live in `app/src/testDebug/` and run on Robolectric (no
 emulator needed). They're part of the debug unit-test task.
