@@ -59,12 +59,6 @@ An Android app for people to share to-do lists.
 
 ### Running the build locally
 
-`JAVA_HOME` and `ANDROID_HOME` must be exported. They live in `~/.zshenv` on
-this machine, so a fresh zsh invocation already has them set — the `Bash`
-tool sources `~/.zshenv` too, so no per-call exports are needed. If Gradle
-complains about a missing JDK or SDK, double-check with
-`echo "$JAVA_HOME $ANDROID_HOME"` before anything else.
-
 Common tasks (all run from the repo root; add `--no-daemon` to match CI):
 
 | what | command |
