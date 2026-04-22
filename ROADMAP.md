@@ -16,7 +16,8 @@ M0 and M1 done. **Next up: M2** — note-level undo/redo, color picker, archive,
 - `compileSdk` 36, `minSdk` 24
 - Room 2.8.4 (KSP 2.3.6)
 - MVVM: `ViewModel` + `StateFlow`, repository layer
-- Tests: JUnit 4 + Robolectric (JVM), Turbine for Flow, Compose UI tests for screens (later)
+- Tests: JUnit 4 + Robolectric (JVM), Turbine for Flow, Compose UI tests for screens
+  (live in `src/testDebug/` so Robolectric runs them in the CI unit-test job)
 - CI: GitHub Actions — lint, unit tests across both debug and release variants (via
   `-PtestBuildType=…`), `assembleDebug`, `assembleRelease`. SHA-pinned actions, grouped
   Dependabot updates with a 7-day cooldown.

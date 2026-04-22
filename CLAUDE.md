@@ -49,4 +49,35 @@ An Android app for people to share to-do lists.
 
 - Test-driven development is preferred; first, create tests for a feature, and then work on it until the tests succeed
 - Commit after every turn!
+- After each commit, a roborev code review will be kicked off in the background. Please use the /roborev-fix skill to fix any issues once the review completes, and repeat as necessary.
 - Feel free to edit this file with things to remember
+
+### Running the build locally
+
+`java` and `android` aren't on the default `PATH` in this environment — Gradle
+needs `JAVA_HOME` and `ANDROID_HOME` exported before any `./gradlew` call:
+
+```bash
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+```
+
+Common tasks (all run from the repo root; add `--no-daemon` to match CI):
+
+| what | command |
+| --- | --- |
+| Compile debug | `./gradlew compileDebugKotlin --no-daemon` |
+| Debug unit tests | `./gradlew testDebugUnitTest -PtestBuildType=debug --no-daemon` |
+| Release unit tests (schema-fallback branch) | `./gradlew testReleaseUnitTest -PtestBuildType=release --no-daemon` |
+| Lint | `./gradlew lintDebug --no-daemon` |
+| Assemble both APKs (also exercises R8 on release) | `./gradlew assembleDebug assembleRelease --no-daemon` |
+
+CI runs exactly this set (`.github/workflows/ci.yml`), so running them locally
+before pushing reproduces CI. `testBuildType` must match the `test*UnitTest` task
+— AGP only generates the unit-test task for one variant at a time.
+
+Compose UI tests live in `app/src/testDebug/` and run on Robolectric (no
+emulator needed). They're part of the debug unit-test task.
+
+Per-test-class reports land in `app/build/reports/tests/testDebugUnitTest/`
+and the JUnit XML in `app/build/test-results/testDebugUnitTest/`.
