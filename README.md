@@ -16,14 +16,17 @@ is debug-APK sideload only. Two ways to get the app onto your phone:
 3. Build and install:
 
     ```bash
-    export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
-    export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
     ./gradlew installDebug
     ```
 
     `installDebug` builds `app-debug.apk` and pushes it in one step. You can
     also build first (`./gradlew assembleDebug`) and install by hand with
     `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
+
+    Gradle needs `JAVA_HOME` and `ANDROID_HOME` in the environment; they're
+    in `~/.zshenv` so fresh zsh shells already have them. In a different
+    shell, export them first — see the "Running the build locally" section
+    of `CLAUDE.md`.
 4. Launch **notetaker** from the app drawer.
 
 `adb devices` should list your phone before `installDebug` — if it says

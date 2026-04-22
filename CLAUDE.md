@@ -49,18 +49,21 @@ An Android app for people to share to-do lists.
 
 - Test-driven development is preferred; first, create tests for a feature, and then work on it until the tests succeed
 - Commit after every turn!
-- After each commit, a roborev code review will be kicked off in the background. Please use the /roborev-fix skill to fix any issues once the review completes, and repeat as necessary.
+- After each commit, the post-commit hook enqueues a roborev review in the
+  background. Don't wait for me to ask — after every commit, run `roborev
+  wait` (it blocks on the review; exits 0 on PASS, non-zero on FAIL or job
+  error). On non-zero exit, immediately invoke the `/roborev-fix` skill to
+  address the findings. If the fix produces a new commit, it gets its own
+  review; repeat the wait + fix loop until `roborev wait` exits 0.
 - Feel free to edit this file with things to remember
 
 ### Running the build locally
 
-`java` and `android` aren't on the default `PATH` in this environment — Gradle
-needs `JAVA_HOME` and `ANDROID_HOME` exported before any `./gradlew` call:
-
-```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
-export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
-```
+`JAVA_HOME` and `ANDROID_HOME` must be exported. They live in `~/.zshenv` on
+this machine, so a fresh zsh invocation already has them set — the `Bash`
+tool sources `~/.zshenv` too, so no per-call exports are needed. If Gradle
+complains about a missing JDK or SDK, double-check with
+`echo "$JAVA_HOME $ANDROID_HOME"` before anything else.
 
 Common tasks (all run from the repo root; add `--no-daemon` to match CI):
 
