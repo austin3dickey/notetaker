@@ -123,6 +123,24 @@ class NoteEditorViewModelTest {
     }
 
     @Test
+    fun `setArchived flips the archived flag on the note in state`() = runTest {
+        val noteId = repository.createNote(title = "n")
+        val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
+
+        vm.state.test {
+            assertThat(awaitLoaded().note.archived).isFalse()
+
+            vm.setArchived(true)
+            assertThat(awaitLoadedMatching { it.note.archived }.note.archived).isTrue()
+
+            vm.setArchived(false)
+            assertThat(awaitLoadedMatching { !it.note.archived }.note.archived).isFalse()
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `setTitle updates the title in state`() = runTest {
         val noteId = repository.createNote(title = "old")
         val vm = NoteEditorViewModel(noteId = noteId, repository = repository)

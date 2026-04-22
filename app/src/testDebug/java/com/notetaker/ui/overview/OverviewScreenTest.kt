@@ -72,6 +72,78 @@ class OverviewScreenTest {
     }
 
     @Test
+    fun archived_section_renders_below_active_when_present() {
+        composeRule.setContent {
+            OverviewScreenContent(
+                state = OverviewState.Loaded(
+                    notes = listOf(NoteSummary(id = 1L, title = "active", previewLines = emptyList())),
+                    archived = listOf(NoteSummary(id = 2L, title = "old", previewLines = emptyList())),
+                ),
+                onOpenNote = {},
+                onCreateNote = {},
+            )
+        }
+
+        composeRule.onNodeWithText("active").assertIsDisplayed()
+        composeRule.onNodeWithTag("archived-header").assertIsDisplayed()
+        composeRule.onNodeWithText("old").assertIsDisplayed()
+    }
+
+    @Test
+    fun archived_header_hidden_when_no_archived_notes() {
+        composeRule.setContent {
+            OverviewScreenContent(
+                state = OverviewState.Loaded(
+                    notes = listOf(NoteSummary(id = 1L, title = "active", previewLines = emptyList())),
+                    archived = emptyList(),
+                ),
+                onOpenNote = {},
+                onCreateNote = {},
+            )
+        }
+
+        composeRule.onNodeWithTag("archived-header").assertDoesNotExist()
+    }
+
+    @Test
+    fun empty_prompt_suppressed_when_only_archived_notes_exist() {
+        composeRule.setContent {
+            OverviewScreenContent(
+                state = OverviewState.Loaded(
+                    notes = emptyList(),
+                    archived = listOf(NoteSummary(id = 2L, title = "old", previewLines = emptyList())),
+                ),
+                onOpenNote = {},
+                onCreateNote = {},
+            )
+        }
+
+        composeRule.onNodeWithText("No notes yet. Tap + to create one.").assertDoesNotExist()
+        composeRule.onNodeWithTag("archived-header").assertIsDisplayed()
+        composeRule.onNodeWithText("old").assertIsDisplayed()
+    }
+
+    @Test
+    fun tapping_archived_card_invokes_onOpenNote() {
+        var opened: Long? = null
+
+        composeRule.setContent {
+            OverviewScreenContent(
+                state = OverviewState.Loaded(
+                    notes = emptyList(),
+                    archived = listOf(NoteSummary(id = 42L, title = "old", previewLines = emptyList())),
+                ),
+                onOpenNote = { opened = it },
+                onCreateNote = {},
+            )
+        }
+
+        composeRule.onNodeWithTag("note-card-42").performClick()
+
+        assertThat(opened).isEqualTo(42L)
+    }
+
+    @Test
     fun tapping_fab_invokes_onCreateNote() {
         var created = 0
 

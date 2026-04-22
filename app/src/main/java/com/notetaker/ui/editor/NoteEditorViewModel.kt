@@ -46,6 +46,10 @@ class NoteEditorViewModel(
         viewModelScope.launch { repository.setNoteColor(noteId, color) }
     }
 
+    fun setArchived(archived: Boolean) {
+        viewModelScope.launch { repository.setNoteArchived(noteId, archived) }
+    }
+
     fun appendItem(text: String = "") {
         viewModelScope.launch { repository.appendItem(noteId, text) }
     }

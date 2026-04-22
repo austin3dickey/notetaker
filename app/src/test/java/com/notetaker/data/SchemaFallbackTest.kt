@@ -63,11 +63,11 @@ class SchemaFallbackTest {
             try {
                 // Destructive fallback fires on first access, wiping the incompatible
                 // data and installing the current schema.
-                assertThat(db.noteDao().observeActive().first()).isEmpty()
+                assertThat(db.noteDao().observeAll().first()).isEmpty()
                 val id = db.noteDao().insert(
                     Note(title = "fresh", createdAt = 0L, updatedAt = 0L),
                 )
-                assertThat(db.noteDao().observeActive().first().single().id).isEqualTo(id)
+                assertThat(db.noteDao().observeAll().first().single().id).isEqualTo(id)
             } finally {
                 db.close()
             }
@@ -93,7 +93,7 @@ class SchemaFallbackTest {
                 // Room opens the DB lazily; forcing a query surfaces the identity-hash
                 // mismatch. Without the fallback, it must throw rather than wipe data.
                 assertThrows(IllegalStateException::class.java) {
-                    runBlocking { db.noteDao().observeActive().first() }
+                    runBlocking { db.noteDao().observeAll().first() }
                 }
             } finally {
                 db.close()
@@ -115,13 +115,13 @@ class SchemaFallbackTest {
         val db = NotetakerDatabase.get(context)
         if (BuildConfig.DEBUG) {
             // Debug: destructive fallback fires, the incompatible DB is wiped.
-            assertThat(db.noteDao().observeActive().first()).isEmpty()
+            assertThat(db.noteDao().observeAll().first()).isEmpty()
             val id = db.noteDao().insert(Note(title = "fresh", createdAt = 0L, updatedAt = 0L))
-            assertThat(db.noteDao().observeActive().first().single().id).isEqualTo(id)
+            assertThat(db.noteDao().observeAll().first().single().id).isEqualTo(id)
         } else {
             // Release: strict mode, Room refuses to open an incompatible DB.
             assertThrows(IllegalStateException::class.java) {
-                runBlocking { db.noteDao().observeActive().first() }
+                runBlocking { db.noteDao().observeAll().first() }
             }
         }
     }

@@ -93,7 +93,7 @@ class NoteOverviewViewModelTest {
     }
 
     @Test
-    fun `archived notes do not appear in overview`() = runTest {
+    fun `archived notes surface in the archived list and are filtered from active`() = runTest {
         val active = repository.createNote(title = "active")
         val archived = repository.createNote(title = "archived")
         repository.setNoteArchived(archived, archived = true)
@@ -101,9 +101,84 @@ class NoteOverviewViewModelTest {
         val vm = NoteOverviewViewModel(repository)
 
         vm.state.test {
-            val loaded = awaitLoadedMatching { it.notes.isNotEmpty() }
+            val loaded = awaitLoadedMatching { it.archived.isNotEmpty() && it.notes.isNotEmpty() }
             assertThat(loaded.notes.map { it.id }).containsExactly(active)
+            assertThat(loaded.archived.map { it.id }).containsExactly(archived)
+            assertThat(loaded.archived.single().title).isEqualTo("archived")
             cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `archived summaries omit preview lines`() = runTest {
+        val noteId = repository.createNote(title = "pantry")
+        repository.appendItem(noteId, "rice")
+        repository.appendItem(noteId, "beans")
+        repository.setNoteArchived(noteId, archived = true)
+
+        val vm = NoteOverviewViewModel(repository)
+
+        vm.state.test {
+            val loaded = awaitLoadedMatching { it.archived.isNotEmpty() }
+            assertThat(loaded.archived.single().previewLines).isEmpty()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `archive toggle never emits a state where the note sits in both sections`() = runTest {
+        val id = repository.createNote(title = "n")
+        val vm = NoteOverviewViewModel(repository)
+
+        vm.state.test {
+            // Settle into the initial active state so the assertion loop only sees
+            // emissions produced by the archive toggle.
+            awaitLoadedMatching { it.notes.any { n -> n.id == id } }
+
+            repository.setNoteArchived(id, archived = true)
+
+            assertExactlyOneSectionUntil(id) { it.archived.any { n -> n.id == id } }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `unarchive toggle never emits a state where the note sits in both sections`() = runTest {
+        // Seed an already-archived note so the only transition we observe is archived →
+        // active. A single test that archives *and* unarchives in one turbine session
+        // would hit StateFlow deduplication: after unarchive, the overview state equals
+        // its pre-archive value by structural equality, so no emission fires and the
+        // assertion loop hangs. Splitting the directions keeps each transition visible.
+        val id = repository.createNote(title = "n")
+        repository.setNoteArchived(id, archived = true)
+        val vm = NoteOverviewViewModel(repository)
+
+        vm.state.test {
+            awaitLoadedMatching { it.archived.any { n -> n.id == id } }
+
+            repository.setNoteArchived(id, archived = false)
+
+            assertExactlyOneSectionUntil(id) { it.notes.any { n -> n.id == id } }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * Drains emissions until [terminalReached] holds, asserting on every Loaded tick
+     * that the note with [id] appears in exactly one of the two sections — the
+     * invariant the single-stream partition is designed to preserve end-to-end.
+     */
+    private suspend fun ReceiveTurbine<OverviewState>.assertExactlyOneSectionUntil(
+        id: Long,
+        terminalReached: (OverviewState.Loaded) -> Boolean,
+    ) {
+        while (true) {
+            val loaded = awaitItem() as? OverviewState.Loaded ?: continue
+            val inActive = loaded.notes.any { it.id == id }
+            val inArchived = loaded.archived.any { it.id == id }
+            assertThat(inActive || inArchived).isTrue()
+            assertThat(inActive && inArchived).isFalse()
+            if (terminalReached(loaded)) return
         }
     }
 

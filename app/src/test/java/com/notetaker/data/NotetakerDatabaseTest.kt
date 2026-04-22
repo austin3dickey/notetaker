@@ -37,32 +37,32 @@ class NotetakerDatabaseTest {
     }
 
     @Test
-    fun `insert and observe active notes`() = runTest {
+    fun `insert and observe notes`() = runTest {
         val id = noteDao.insert(note(title = "groceries"))
-        val notes = noteDao.observeActive().first()
+        val notes = noteDao.observeAll().first()
         assertThat(notes).hasSize(1)
         assertThat(notes.single().id).isEqualTo(id)
         assertThat(notes.single().title).isEqualTo("groceries")
     }
 
     @Test
-    fun `archived notes are excluded from active query`() = runTest {
+    fun `observeAll returns active and archived notes together`() = runTest {
         val activeId = noteDao.insert(note(title = "active"))
-        noteDao.insert(note(title = "archived", archived = true))
+        val archivedId = noteDao.insert(note(title = "archived", archived = true))
 
-        val active = noteDao.observeActive().first()
-        assertThat(active.map { it.id }).containsExactly(activeId)
+        val all = noteDao.observeAll().first()
 
-        val archived = noteDao.observeArchived().first()
-        assertThat(archived.map { it.title }).containsExactly("archived")
+        assertThat(all.map { it.id }).containsExactly(activeId, archivedId)
+        assertThat(all.single { !it.archived }.title).isEqualTo("active")
+        assertThat(all.single { it.archived }.title).isEqualTo("archived")
     }
 
     @Test
-    fun `active notes are ordered by updatedAt desc`() = runTest {
+    fun `notes are ordered by updatedAt desc`() = runTest {
         val older = noteDao.insert(note(title = "older", updatedAt = 100L))
         val newer = noteDao.insert(note(title = "newer", updatedAt = 200L))
 
-        val notes = noteDao.observeActive().first()
+        val notes = noteDao.observeAll().first()
 
         assertThat(notes.map { it.id }).containsExactly(newer, older).inOrder()
     }
@@ -153,12 +153,12 @@ class NotetakerDatabaseTest {
     }
 
     @Test
-    fun `observeActive tiebreaks equal updatedAt by id DESC`() = runTest {
+    fun `observeAll tiebreaks equal updatedAt by id DESC`() = runTest {
         val older = noteDao.insert(note(title = "older", updatedAt = 100L))
         val newerA = noteDao.insert(note(title = "newerA", updatedAt = 200L))
         val newerB = noteDao.insert(note(title = "newerB", updatedAt = 200L))
 
-        val notes = noteDao.observeActive().first()
+        val notes = noteDao.observeAll().first()
 
         // Same timestamp -> higher id wins; then older note trails.
         assertThat(notes.map { it.id }).containsExactly(newerB, newerA, older).inOrder()

@@ -19,9 +19,7 @@ class NoteRepository(
     private val itemDao: ChecklistItemDao,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    fun observeActive(): Flow<List<Note>> = noteDao.observeActive()
-
-    fun observeArchived(): Flow<List<Note>> = noteDao.observeArchived()
+    fun observeAllNotes(): Flow<List<Note>> = noteDao.observeAll()
 
     fun observeNote(noteId: Long): Flow<Note?> = noteDao.observeById(noteId)
 
