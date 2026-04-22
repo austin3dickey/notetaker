@@ -174,7 +174,22 @@ class NoteRepositoryTest {
             noteId = id,
             title = "restored",
             color = NoteColor.BLUE,
-            items = original.map { it.copy(text = "new-${it.text}").toSnapshot() },
+            items = listOf(
+                ItemSnapshot(
+                    id = original[0].id,
+                    text = "new-a",
+                    checked = false,
+                    position = 0,
+                    indent = 0,
+                ),
+                ItemSnapshot(
+                    id = original[1].id,
+                    text = "new-b",
+                    checked = true,
+                    position = 1,
+                    indent = 1,
+                ),
+            ),
         )
 
         val note = repository.observeNote(id).first()!!
@@ -184,6 +199,9 @@ class NoteRepositoryTest {
 
         val items = repository.observeItems(id).first()
         assertThat(items.map { it.text }).containsExactly("new-a", "new-b").inOrder()
+        assertThat(items.map { it.checked }).containsExactly(false, true).inOrder()
+        assertThat(items.map { it.position }).containsExactly(0, 1).inOrder()
+        assertThat(items.map { it.indent }).containsExactly(0, 1).inOrder()
         // Row identity must survive the restore so UI that still holds a pre-restore
         // ChecklistItem reference keeps pointing at a live row.
         assertThat(items.map { it.id }).containsExactly(original[0].id, original[1].id).inOrder()

@@ -645,6 +645,78 @@ class NoteEditorViewModelTest {
     }
 
     @Test
+    fun `updateItemText on a stale reference after undo targets id not stale fields`() =
+        runTest {
+            // Companion to the toggle race test, for the text-edit path. Verifies two
+            // things at once: the update lands on the restored row (id is preserved
+            // across restore), and the column-targeted UPDATE doesn't clobber the
+            // restored checked-state with the stale reference's value.
+            val noteId = repository.createNote()
+            repository.appendItem(noteId, "original")
+            val vm = NoteEditorViewModel(
+                noteId = noteId,
+                repository = repository,
+                externalScope = backgroundScope,
+            )
+
+            vm.state.test {
+                val initial = awaitLoaded()
+                val staleRef = initial.unchecked.single()
+
+                // Check it, then toggle off via the repo (without going through the
+                // VM) so staleRef captures checked=false but the DB will soon have
+                // checked=true via the upcoming undo restore.
+                vm.toggleChecked(staleRef)
+                val checked = awaitLoadedMatching { it.checked.isNotEmpty() }
+                val checkedRef = checked.checked.single()
+
+                vm.toggleChecked(checkedRef)
+                awaitLoadedMatching { it.checked.isEmpty() }
+
+                // Now undo the uncheck — brings us back to checked=true. Before Room
+                // emits, type on the original (stale) unchecked reference.
+                vm.undo()
+                vm.updateItemText(staleRef, "edited")
+
+                val final = awaitLoadedMatching { it.checked.any { it.text == "edited" } }
+                assertThat(final.checked.single().text).isEqualTo("edited")
+                assertThat(final.unchecked).isEmpty()
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
+    fun `deleteItem on a stale reference after undo removes the restored row by id`() =
+        runTest {
+            val noteId = repository.createNote()
+            repository.appendItem(noteId, "keep-me")
+            val vm = NoteEditorViewModel(
+                noteId = noteId,
+                repository = repository,
+                externalScope = backgroundScope,
+            )
+
+            vm.state.test {
+                val initial = awaitLoaded()
+                val staleRef = initial.unchecked.single()
+
+                // Text change so there's something to undo.
+                vm.updateItemText(staleRef, "edited")
+                awaitLoadedMatching { it.unchecked.single().text == "edited" }
+
+                // Undo + delete the stale reference in quick succession. The restore
+                // reinserts with the same id, so the delete's by-id path still finds
+                // and removes it.
+                vm.undo()
+                vm.deleteItem(staleRef)
+
+                awaitLoadedMatching { it.unchecked.isEmpty() }
+                assertThat(repository.observeItems(noteId).first()).isEmpty()
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
     fun `undo restores title color and item list from the snapshot`() = runTest {
         val noteId = repository.createNote(title = "orig", color = NoteColor.NONE)
         repository.appendItem(noteId, "a")
