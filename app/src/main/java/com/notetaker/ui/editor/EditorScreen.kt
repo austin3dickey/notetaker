@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
@@ -70,15 +72,21 @@ fun EditorScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val wasLoaded by viewModel.wasLoaded.collectAsStateWithLifecycle()
+    val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
+    val canRedo by viewModel.canRedo.collectAsStateWithLifecycle()
     AutoPopOnNoteRemoval(state = state, wasLoaded = wasLoaded, onPop = onBack)
     EditorScreenContent(
         state = state,
+        canUndo = canUndo,
+        canRedo = canRedo,
         onBack = onBack,
+        onUndo = viewModel::undo,
+        onRedo = viewModel::redo,
         onTitleChange = viewModel::setTitle,
         onItemTextChange = viewModel::updateItemText,
         onToggleItem = viewModel::toggleChecked,
         onDeleteItem = viewModel::deleteItem,
-        onEnterOnItem = { afterPos, remainder -> viewModel.addItemAfter(afterPos, remainder) },
+        onSplitItem = viewModel::splitItem,
         onAppendItem = { viewModel.appendItem() },
         onDeleteNote = viewModel::deleteNote,
         modifier = modifier,
@@ -89,12 +97,16 @@ fun EditorScreen(
 @Composable
 internal fun EditorScreenContent(
     state: EditorState,
+    canUndo: Boolean,
+    canRedo: Boolean,
     onBack: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
     onTitleChange: (String) -> Unit,
     onItemTextChange: (ChecklistItem, String) -> Unit,
     onToggleItem: (ChecklistItem) -> Unit,
     onDeleteItem: (ChecklistItem) -> Unit,
-    onEnterOnItem: (afterPosition: Int, remainder: String) -> Unit,
+    onSplitItem: (item: ChecklistItem, keepText: String, remainderText: String) -> Unit,
     onAppendItem: () -> Unit,
     onDeleteNote: () -> Unit,
     modifier: Modifier = Modifier,
@@ -115,6 +127,26 @@ internal fun EditorScreenContent(
                 },
                 actions = {
                     if (showMenu) {
+                        IconButton(
+                            onClick = onUndo,
+                            enabled = canUndo,
+                            modifier = Modifier.testTag("editor-undo"),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Undo,
+                                contentDescription = "Undo",
+                            )
+                        }
+                        IconButton(
+                            onClick = onRedo,
+                            enabled = canRedo,
+                            modifier = Modifier.testTag("editor-redo"),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Redo,
+                                contentDescription = "Redo",
+                            )
+                        }
                         IconButton(
                             onClick = { menuExpanded = true },
                             modifier = Modifier.testTag("editor-overflow"),
@@ -152,7 +184,7 @@ internal fun EditorScreenContent(
                 onItemTextChange = onItemTextChange,
                 onToggleItem = onToggleItem,
                 onDeleteItem = onDeleteItem,
-                onEnterOnItem = onEnterOnItem,
+                onSplitItem = onSplitItem,
                 onAppendItem = onAppendItem,
             )
         }
@@ -232,7 +264,7 @@ private fun LoadedEditor(
     onItemTextChange: (ChecklistItem, String) -> Unit,
     onToggleItem: (ChecklistItem) -> Unit,
     onDeleteItem: (ChecklistItem) -> Unit,
-    onEnterOnItem: (afterPosition: Int, remainder: String) -> Unit,
+    onSplitItem: (item: ChecklistItem, keepText: String, remainderText: String) -> Unit,
     onAppendItem: () -> Unit,
 ) {
     // When we add a new item after position P, we expect it to appear at position P+1.
@@ -257,9 +289,9 @@ private fun LoadedEditor(
                 onTextChange = { onItemTextChange(item, it) },
                 onToggle = { onToggleItem(item) },
                 onDelete = { onDeleteItem(item) },
-                onEnter = { remainder ->
+                onSplit = { keep, remainder ->
                     pendingFocusPosition = item.position + 1
-                    onEnterOnItem(item.position, remainder)
+                    onSplitItem(item, keep, remainder)
                 },
                 splittingEnabled = true,
             )
@@ -297,7 +329,7 @@ private fun LoadedEditor(
                     onDelete = { onDeleteItem(item) },
                     // Checked rows don't split on Enter, so this never runs — but it's
                     // part of the row's shared API.
-                    onEnter = {},
+                    onSplit = { _, _ -> },
                     splittingEnabled = false,
                 )
             }
@@ -361,7 +393,7 @@ private fun ChecklistRow(
     onTextChange: (String) -> Unit,
     onToggle: () -> Unit,
     onDelete: () -> Unit,
-    onEnter: (remainder: String) -> Unit,
+    onSplit: (keepText: String, remainderText: String) -> Unit,
     splittingEnabled: Boolean,
 ) {
     var tfv by remember(item.id) {
@@ -413,7 +445,7 @@ private fun ChecklistRow(
                     currentItemText = item.text,
                     setLocal = { tfv = it },
                     onTextChange = onTextChange,
-                    onEnter = onEnter,
+                    onSplit = onSplit,
                     onBackspaceOnEmpty = onDelete,
                     splittingEnabled = splittingEnabled,
                 )
@@ -463,10 +495,11 @@ private fun ChecklistRow(
  *   (Select All + Delete, cut, paste replacement); keep the row with empty text.
  * - ZWSP sentinel gone + text not empty → user edited at position 0; rebuild the
  *   sentinel and propagate the new text.
- * - Newline present + [splittingEnabled] → split at the newline, keep the prefix,
- *   hand the remainder to [onEnter]. For checked rows ([splittingEnabled] false)
- *   the suffix would be discarded by the no-op onEnter, so we strip the newline
- *   and keep the full text intact instead.
+ * - Newline present + [splittingEnabled] → split at the newline; the prefix stays
+ *   on this row and the suffix becomes a new row via a single [onSplit] callback
+ *   (one write = one undo entry, even when the cursor was mid-text). For checked
+ *   rows ([splittingEnabled] false) the newline is stripped and the text kept
+ *   intact instead.
  * - Plain typing → propagate the new text.
  */
 private fun handleItemEdit(
@@ -475,7 +508,7 @@ private fun handleItemEdit(
     currentItemText: String,
     setLocal: (TextFieldValue) -> Unit,
     onTextChange: (String) -> Unit,
-    onEnter: (remainder: String) -> Unit,
+    onSplit: (keepText: String, remainderText: String) -> Unit,
     onBackspaceOnEmpty: () -> Unit,
     splittingEnabled: Boolean,
 ) {
@@ -519,8 +552,7 @@ private fun handleItemEdit(
         val after = withoutPrefix.substring(newlineIdx + 1)
         val keep = ZWSP + before
         setLocal(TextFieldValue(keep, TextRange(keep.length)))
-        if (before != currentItemText) onTextChange(before)
-        onEnter(after)
+        onSplit(before, after)
         return
     }
 

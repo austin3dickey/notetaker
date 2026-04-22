@@ -1,6 +1,8 @@
 package com.notetaker.ui.editor
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -34,24 +36,32 @@ class EditorScreenTest {
 
     private fun stubContent(
         state: EditorState,
+        canUndo: Boolean = false,
+        canRedo: Boolean = false,
         onBack: () -> Unit = {},
+        onUndo: () -> Unit = {},
+        onRedo: () -> Unit = {},
         onTitleChange: (String) -> Unit = {},
         onItemTextChange: (ChecklistItem, String) -> Unit = { _, _ -> },
         onToggleItem: (ChecklistItem) -> Unit = {},
         onDeleteItem: (ChecklistItem) -> Unit = {},
-        onEnterOnItem: (Int, String) -> Unit = { _, _ -> },
+        onSplitItem: (ChecklistItem, String, String) -> Unit = { _, _, _ -> },
         onAppendItem: () -> Unit = {},
         onDeleteNote: () -> Unit = {},
     ) {
         composeRule.setContent {
             EditorScreenContent(
                 state = state,
+                canUndo = canUndo,
+                canRedo = canRedo,
                 onBack = onBack,
+                onUndo = onUndo,
+                onRedo = onRedo,
                 onTitleChange = onTitleChange,
                 onItemTextChange = onItemTextChange,
                 onToggleItem = onToggleItem,
                 onDeleteItem = onDeleteItem,
-                onEnterOnItem = onEnterOnItem,
+                onSplitItem = onSplitItem,
                 onAppendItem = onAppendItem,
                 onDeleteNote = onDeleteNote,
             )
@@ -147,13 +157,15 @@ class EditorScreenTest {
     }
 
     @Test
-    fun entering_newline_splits_item_and_carries_remainder() {
+    fun entering_newline_splits_item_into_a_single_atomic_call() {
         val milk = item(1L, "milk")
-        val enters = mutableListOf<Pair<Int, String>>()
+        val splits = mutableListOf<Triple<Long, String, String>>()
+        val textEdits = mutableListOf<Pair<Long, String>>()
 
         stubContent(
             state = EditorState.Loaded(note = note, unchecked = listOf(milk), checked = emptyList()),
-            onEnterOnItem = { afterPos, remainder -> enters += afterPos to remainder },
+            onSplitItem = { item, keep, remainder -> splits += Triple(item.id, keep, remainder) },
+            onItemTextChange = { item, text -> textEdits += item.id to text },
         )
 
         // Injecting a newline simulates Enter on both hardware and soft keyboards
@@ -161,7 +173,10 @@ class EditorScreenTest {
         // the onValueChange-based detection is what makes this path reliable.
         composeRule.onNodeWithTag("item-text-1").performTextInput("\n")
 
-        assertThat(enters).containsExactly(milk.position to "")
+        // Split must be a single callback (one undo entry). No separate text-change
+        // should fire for the truncation half — that would double-count the gesture.
+        assertThat(splits).containsExactly(Triple(milk.id, "milk", ""))
+        assertThat(textEdits).isEmpty()
     }
 
     @Test
@@ -285,24 +300,75 @@ class EditorScreenTest {
     }
 
     @Test
+    fun undo_and_redo_buttons_are_disabled_when_stacks_are_empty() {
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            canUndo = false,
+            canRedo = false,
+        )
+
+        composeRule.onNodeWithTag("editor-undo").assertIsNotEnabled()
+        composeRule.onNodeWithTag("editor-redo").assertIsNotEnabled()
+    }
+
+    @Test
+    fun undo_button_enables_and_invokes_callback_when_canUndo_is_true() {
+        var undos = 0
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            canUndo = true,
+            onUndo = { undos++ },
+        )
+
+        composeRule.onNodeWithTag("editor-undo").assertIsEnabled()
+        composeRule.onNodeWithTag("editor-undo").performClick()
+
+        assertThat(undos).isEqualTo(1)
+    }
+
+    @Test
+    fun redo_button_enables_and_invokes_callback_when_canRedo_is_true() {
+        var redos = 0
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            canRedo = true,
+            onRedo = { redos++ },
+        )
+
+        composeRule.onNodeWithTag("editor-redo").assertIsEnabled()
+        composeRule.onNodeWithTag("editor-redo").performClick()
+
+        assertThat(redos).isEqualTo(1)
+    }
+
+    @Test
+    fun undo_and_redo_buttons_are_hidden_in_loading_state() {
+        stubContent(EditorState.Loading)
+
+        composeRule.onNodeWithTag("editor-undo").assertDoesNotExist()
+        composeRule.onNodeWithTag("editor-redo").assertDoesNotExist()
+    }
+
+    @Test
     fun entering_newline_in_checked_row_strips_newline_and_preserves_text() {
         val coffee = item(1L, "coffee", checked = true)
-        val enters = mutableListOf<Pair<Int, String>>()
+        val splits = mutableListOf<Triple<Long, String, String>>()
         val edits = mutableListOf<Pair<Long, String>>()
 
         stubContent(
             state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = listOf(coffee)),
-            onEnterOnItem = { afterPos, remainder -> enters += afterPos to remainder },
+            onSplitItem = { item, keep, remainder -> splits += Triple(item.id, keep, remainder) },
             onItemTextChange = { item, text -> edits += item.id to text },
         )
 
         // Append a newline and some suffix as if the user pressed Enter in the middle
         // of editing. Checked rows must not split — the suffix after the cursor would
-        // be discarded by the no-op onEnter. Instead, the newline is stripped and the
-        // full text is preserved.
+        // be lost. Instead, the newline is stripped and the full text is preserved.
         composeRule.onNodeWithTag("item-text-1").performTextInput("\nblack")
 
-        assertThat(enters).isEmpty()
+        assertThat(splits).isEmpty()
         assertThat(edits.last()).isEqualTo(1L to "coffeeblack")
     }
 }
