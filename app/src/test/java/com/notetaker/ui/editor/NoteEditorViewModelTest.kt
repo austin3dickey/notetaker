@@ -139,16 +139,34 @@ class NoteEditorViewModelTest {
     }
 
     @Test
-    fun `deleteNote removes the note and state transitions to NotFound`() = runTest {
+    fun `deleteNote removes the note and emits a Deleted event`() = runTest {
         val noteId = repository.createNote(title = "gone")
         val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
 
-        vm.state.test {
-            awaitLoaded()
-
+        vm.events.test {
             vm.deleteNote()
+            assertThat(awaitItem()).isEqualTo(EditorEvent.Deleted)
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertThat(repository.observeNote(noteId).first()).isNull()
+    }
 
-            assertThat(awaitSettled()).isEqualTo(EditorState.NotFound)
+    @Test
+    fun `deleteNote survives a late events subscriber`() = runTest {
+        // Buffered channel guarantees: the UI can re-subscribe (e.g. after a
+        // configuration change) and still see the Deleted event that was emitted
+        // while no one was collecting. Without buffering, the event would be
+        // dropped and the screen would never pop.
+        val noteId = repository.createNote(title = "gone")
+        val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
+
+        vm.deleteNote()
+        // Let the launched coroutine run to completion so the event lands in the
+        // channel before anyone subscribes.
+        testScheduler.advanceUntilIdle()
+
+        vm.events.test {
+            assertThat(awaitItem()).isEqualTo(EditorEvent.Deleted)
             cancelAndIgnoreRemainingEvents()
         }
         assertThat(repository.observeNote(noteId).first()).isNull()

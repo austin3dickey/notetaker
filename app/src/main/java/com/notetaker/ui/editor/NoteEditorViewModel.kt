@@ -8,9 +8,12 @@ import com.notetaker.data.ChecklistItem
 import com.notetaker.data.Note
 import com.notetaker.data.NoteColor
 import com.notetaker.data.NoteRepository
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -18,6 +21,11 @@ class NoteEditorViewModel(
     private val noteId: Long,
     private val repository: NoteRepository,
 ) : ViewModel() {
+
+    // Buffered so a delete emitted just before the UI resubscribes (e.g. during a
+    // configuration change) is still delivered once the new LaunchedEffect attaches.
+    private val _events = Channel<EditorEvent>(capacity = Channel.BUFFERED)
+    val events: Flow<EditorEvent> = _events.receiveAsFlow()
 
     val state: StateFlow<EditorState> = combine(
         repository.observeNote(noteId),
@@ -67,13 +75,17 @@ class NoteEditorViewModel(
     }
 
     /**
-     * Deletes the owning note. Suspends until the repository write completes so the
-     * caller can navigate away only after the delete is durable — otherwise a fast
-     * back-navigation could race against the delete and leave the user staring at
-     * stale editor content.
+     * Deletes the owning note. Runs in [viewModelScope] so the write survives a
+     * configuration change that tears down the editor composable mid-delete — doing
+     * this in a composable-scoped coroutine would let the Room transaction be
+     * cancelled before it commits. Completion is announced via [events] so the UI
+     * can pop the back stack only after the delete is durable.
      */
-    suspend fun deleteNote() {
-        repository.deleteNote(noteId)
+    fun deleteNote() {
+        viewModelScope.launch {
+            repository.deleteNote(noteId)
+            _events.send(EditorEvent.Deleted)
+        }
     }
 
     companion object {
@@ -104,4 +116,9 @@ sealed interface EditorState {
         val unchecked: List<ChecklistItem>,
         val checked: List<ChecklistItem>,
     ) : EditorState
+}
+
+/** One-shot events the editor screen should react to (e.g. navigate away). */
+sealed interface EditorEvent {
+    data object Deleted : EditorEvent
 }

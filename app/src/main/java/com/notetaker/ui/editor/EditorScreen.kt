@@ -40,7 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,7 +56,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notetaker.data.ChecklistItem
-import kotlinx.coroutines.launch
 
 /**
  * Compose entry point for a single note. Stateless against the ViewModel — all mutation
@@ -70,7 +69,17 @@ fun EditorScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
+    // Hold a stable pointer to the latest onBack so our effect doesn't need to be
+    // keyed on it — keying on onBack would restart the events collector on every
+    // recomposition and risk missing a Deleted event emitted in that window.
+    val currentOnBack by rememberUpdatedState(onBack)
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                EditorEvent.Deleted -> currentOnBack()
+            }
+        }
+    }
     EditorScreenContent(
         state = state,
         onBack = onBack,
@@ -80,15 +89,7 @@ fun EditorScreen(
         onDeleteItem = viewModel::deleteItem,
         onEnterOnItem = { afterPos, remainder -> viewModel.addItemAfter(afterPos, remainder) },
         onAppendItem = { viewModel.appendItem() },
-        onDeleteNote = {
-            // Suspend on the repository delete before popping the stack. If we popped
-            // first, the back-stack transition could race the delete and flash stale
-            // editor content on its way out.
-            scope.launch {
-                viewModel.deleteNote()
-                onBack()
-            }
-        },
+        onDeleteNote = viewModel::deleteNote,
         modifier = modifier,
     )
 }
