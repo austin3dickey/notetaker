@@ -6,7 +6,12 @@ spec and `ROADMAP.md` for what's shipped and what's next.
 ## Testing on your Android device
 
 There's no release signing config yet (tracked in ROADMAP M6), so distribution
-is debug-APK sideload only. Two ways to get the app onto your phone:
+is debug-APK sideload only. Two ways to get the app onto your phone.
+
+**Prerequisites (both options).** Gradle needs `JAVA_HOME` and `ANDROID_HOME`
+in the environment; they live in `~/.zshenv` so fresh zsh shells already
+have them. From a different shell, export them first — see the "Running
+the build locally" section of `CLAUDE.md`.
 
 ### Option 1 — adb install (fastest if you already have adb)
 
@@ -22,11 +27,6 @@ is debug-APK sideload only. Two ways to get the app onto your phone:
     `installDebug` builds `app-debug.apk` and pushes it in one step. You can
     also build first (`./gradlew assembleDebug`) and install by hand with
     `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
-
-    Gradle needs `JAVA_HOME` and `ANDROID_HOME` in the environment; they're
-    in `~/.zshenv` so fresh zsh shells already have them. In a different
-    shell, export them first — see the "Running the build locally" section
-    of `CLAUDE.md`.
 4. Launch **notetaker** from the app drawer.
 
 `adb devices` should list your phone before `installDebug` — if it says
