@@ -530,6 +530,83 @@ class NoteEditorViewModelTest {
     }
 
     @Test
+    fun `splitItem records a single undo entry and one undo fully reverses the split`() =
+        runTest {
+            val noteId = repository.createNote()
+            repository.appendItem(noteId, "helloworld")
+            val vm = NoteEditorViewModel(
+                noteId = noteId,
+                repository = repository,
+                externalScope = backgroundScope,
+            )
+
+            vm.state.test {
+                val initial = awaitLoaded()
+                val item = initial.unchecked.single()
+
+                // Split mid-text — the truncation and the insert have to collapse into
+                // one undo entry. Otherwise a user Enter in the middle of a word would
+                // require two undos to reverse, which breaks the mental model.
+                vm.splitItem(item, keepText = "hello", remainderText = "world")
+                awaitLoadedMatching { it.unchecked.size == 2 && it.unchecked[0].text == "hello" }
+
+                vm.undo()
+                val afterUndo = awaitLoadedMatching { it.unchecked.size == 1 }
+                assertThat(afterUndo.unchecked.single().text).isEqualTo("helloworld")
+                assertThat(vm.canUndo.value).isFalse()
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
+    fun `two rapid undos preserve intermediate history on the redo stack`() = runTest {
+        // Drives the race the roborev finding called out: both undo() calls read the
+        // stacks synchronously, but the repository restore is asynchronous, so the
+        // second click would see a stale state.value without [lastAppliedSnapshot] and
+        // duplicate the topmost redo entry — losing the middle state entirely.
+        //
+        // Uses structural appends (never coalesced) so we get three distinct undo
+        // entries to rewind through.
+        val noteId = repository.createNote()
+        val vm = NoteEditorViewModel(
+            noteId = noteId,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
+
+        vm.state.test {
+            awaitLoaded()
+
+            vm.appendItem("a")
+            awaitLoadedMatching { it.unchecked.size == 1 }
+            vm.appendItem("b")
+            awaitLoadedMatching { it.unchecked.size == 2 }
+
+            // Two undos back to back. We pop and push against the stacks synchronously,
+            // so the second click sees an `undo` stack of size 1 even before the first
+            // undo's restore has committed.
+            vm.undo()
+            vm.undo()
+
+            // After draining emissions, state should be back to empty and redo should
+            // have two distinct entries (one-item then two-item) — not two copies of
+            // the post-append state.
+            awaitLoadedMatching { it.unchecked.isEmpty() }
+            assertThat(vm.canRedo.value).isTrue()
+
+            vm.redo()
+            val afterFirstRedo = awaitLoadedMatching { it.unchecked.size == 1 }
+            assertThat(afterFirstRedo.unchecked.single().text).isEqualTo("a")
+
+            vm.redo()
+            val afterSecondRedo = awaitLoadedMatching { it.unchecked.size == 2 }
+            assertThat(afterSecondRedo.unchecked.map { it.text }).containsExactly("a", "b").inOrder()
+            assertThat(vm.canRedo.value).isFalse()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `undo restores title color and item list from the snapshot`() = runTest {
         val noteId = repository.createNote(title = "orig", color = NoteColor.NONE)
         repository.appendItem(noteId, "a")

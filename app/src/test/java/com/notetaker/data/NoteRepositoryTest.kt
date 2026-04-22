@@ -149,6 +149,20 @@ class NoteRepositoryTest {
     }
 
     @Test
+    fun `splitItem truncates the row and inserts a new one without breaking positions`() = runTest {
+        val id = repository.createNote()
+        repository.appendItem(id, "alpha")
+        repository.appendItem(id, "omega")
+
+        val alpha = repository.observeItems(id).first().single { it.text == "alpha" }
+        repository.splitItem(alpha, keepText = "al", remainderText = "pha")
+
+        val items = repository.observeItems(id).first()
+        assertThat(items.map { it.text }).containsExactly("al", "pha", "omega").inOrder()
+        assertThat(items.map { it.position }).containsExactly(0, 1, 2).inOrder()
+    }
+
+    @Test
     fun `replaceNoteContents overwrites title color and items in one transaction`() = runTest {
         val id = repository.createNote(title = "orig", color = NoteColor.NONE)
         repository.appendItem(id, "a")

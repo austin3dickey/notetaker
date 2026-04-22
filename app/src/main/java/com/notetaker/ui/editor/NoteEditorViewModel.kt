@@ -66,6 +66,14 @@ class NoteEditorViewModel(
     private val _canRedo = MutableStateFlow(false)
     val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
 
+    // The snapshot we most recently asked the repository to restore. Reads as "logical
+    // current state" for subsequent undo/redo calls until a real state emission catches
+    // up. Without this, back-to-back undo clicks would both see the pre-apply
+    // `state.value` and push identical entries onto the redo stack, losing intermediate
+    // history. Cleared by any new user mutation (at which point [state.value] — or its
+    // next emission — is authoritative again).
+    private var lastAppliedSnapshot: EditorSnapshot? = null
+
     fun setTitle(title: String) {
         recordUndoPoint(UndoKey.TitleEdit)
         viewModelScope.launch { repository.updateNoteTitle(noteId, title) }
@@ -84,6 +92,18 @@ class NoteEditorViewModel(
     fun addItemAfter(afterPosition: Int, text: String = "") {
         recordUndoPoint(UndoKey.Structural)
         viewModelScope.launch { repository.addItemAfter(noteId, afterPosition, text) }
+    }
+
+    /**
+     * Splits [item] at the cursor: the original row keeps [keepText], and a new row is
+     * inserted immediately after it with [remainderText]. Both writes commit in a single
+     * repository transaction so the user's "press Enter" gesture contributes one undo
+     * entry (and doesn't leave the editor in a half-split state if the process dies
+     * mid-write).
+     */
+    fun splitItem(item: ChecklistItem, keepText: String, remainderText: String) {
+        recordUndoPoint(UndoKey.Structural)
+        viewModelScope.launch { repository.splitItem(item, keepText, remainderText) }
     }
 
     fun updateItemText(item: ChecklistItem, text: String) {
@@ -106,9 +126,8 @@ class NoteEditorViewModel(
      * state onto the redo stack so [redo] can reapply it. No-op if nothing to undo.
      */
     fun undo() {
-        val loaded = state.value as? EditorState.Loaded ?: return
+        val current = currentLogicalSnapshot() ?: return
         val target = history.undo.lastOrNull() ?: return
-        val current = loaded.toSnapshot()
         updateHistory(
             UndoHistory(
                 undo = history.undo.dropLast(1),
@@ -118,6 +137,7 @@ class NoteEditorViewModel(
                 lastPushKey = null,
             ),
         )
+        lastAppliedSnapshot = target
         applySnapshot(target)
     }
 
@@ -126,9 +146,8 @@ class NoteEditorViewModel(
      * pre-redo state onto the undo stack.
      */
     fun redo() {
-        val loaded = state.value as? EditorState.Loaded ?: return
+        val current = currentLogicalSnapshot() ?: return
         val target = history.redo.lastOrNull() ?: return
-        val current = loaded.toSnapshot()
         updateHistory(
             UndoHistory(
                 undo = (history.undo + current).takeLast(MAX_DEPTH),
@@ -136,7 +155,19 @@ class NoteEditorViewModel(
                 lastPushKey = null,
             ),
         )
+        lastAppliedSnapshot = target
         applySnapshot(target)
+    }
+
+    /**
+     * Best-available snapshot of the note's logical state for stack bookkeeping. Prefers
+     * [lastAppliedSnapshot] when an undo/redo is still propagating through Room, so a
+     * rapid second click doesn't repeatedly push the same stale [state.value]. Falls
+     * back to [state.value] once no restore is pending.
+     */
+    private fun currentLogicalSnapshot(): EditorSnapshot? {
+        lastAppliedSnapshot?.let { return it }
+        return (state.value as? EditorState.Loaded)?.toSnapshot()
     }
 
     /**
@@ -165,19 +196,24 @@ class NoteEditorViewModel(
      * (the UI doesn't render editable widgets in Loading/NotFound).
      */
     private fun recordUndoPoint(key: UndoKey) {
-        val loaded = state.value as? EditorState.Loaded ?: return
+        // Prefer [lastAppliedSnapshot] when it's still in flight: a user edit that lands
+        // between an undo and its Room emission needs to snapshot the restored state,
+        // not the pre-undo state that [state.value] still shows.
+        val current = currentLogicalSnapshot() ?: return
         val prev = history
         val next = if (key.coalescesWith(prev.lastPushKey)) {
             prev.copy(redo = emptyList())
         } else {
-            val snapshot = loaded.toSnapshot()
             prev.copy(
-                undo = (prev.undo + snapshot).takeLast(MAX_DEPTH),
+                undo = (prev.undo + current).takeLast(MAX_DEPTH),
                 redo = emptyList(),
                 lastPushKey = key,
             )
         }
         updateHistory(next)
+        // Direct user edit invalidates any pending restore assumption — the next time
+        // we need a snapshot, fall back to observing [state.value] again.
+        lastAppliedSnapshot = null
     }
 
     private fun updateHistory(next: UndoHistory) {

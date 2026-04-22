@@ -90,6 +90,37 @@ class NoteRepository(
         touchNote(item.noteId)
     }
 
+    /**
+     * Atomic split: truncate [item] to [keepText] and insert a new item with
+     * [remainderText] immediately after it. Used by the editor's "Enter splits the row"
+     * path so a single keypress produces a single write (and therefore a single undo
+     * entry) even when the cursor was in the middle of the original text. Shifts later
+     * positions up by one in descending order, matching the invariant in [addItemAfter].
+     */
+    suspend fun splitItem(
+        item: ChecklistItem,
+        keepText: String,
+        remainderText: String,
+    ): Long = db.withTransaction {
+        itemDao.update(item.copy(text = keepText))
+        val shifted = itemDao.getByNote(item.noteId)
+            .asSequence()
+            .filter { it.position > item.position }
+            .map { it.copy(position = it.position + 1) }
+            .sortedByDescending { it.position }
+            .toList()
+        if (shifted.isNotEmpty()) itemDao.updateAll(shifted)
+        val newId = itemDao.insert(
+            ChecklistItem(
+                noteId = item.noteId,
+                text = remainderText,
+                position = item.position + 1,
+            ),
+        )
+        touchNote(item.noteId)
+        newId
+    }
+
     suspend fun setItemChecked(item: ChecklistItem, checked: Boolean) = db.withTransaction {
         itemDao.update(item.copy(checked = checked))
         touchNote(item.noteId)
