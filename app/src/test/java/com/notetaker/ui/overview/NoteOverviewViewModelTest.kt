@@ -137,20 +137,48 @@ class NoteOverviewViewModelTest {
 
             repository.setNoteArchived(id, archived = true)
 
-            // Every Loaded emission derives from a single `observeAllNotes` snapshot,
-            // so the note must appear in exactly one section on every tick — never in
-            // both (the regression this unified stream is designed to prevent), and
-            // never in neither (it always exists in the DB).
-            var sawArchived = false
-            while (!sawArchived) {
-                val loaded = awaitItem() as? OverviewState.Loaded ?: continue
-                val inActive = loaded.notes.any { it.id == id }
-                val inArchived = loaded.archived.any { it.id == id }
-                assertThat(inActive || inArchived).isTrue()
-                assertThat(inActive && inArchived).isFalse()
-                if (inArchived) sawArchived = true
-            }
+            assertExactlyOneSectionUntil(id) { it.archived.any { n -> n.id == id } }
             cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `unarchive toggle never emits a state where the note sits in both sections`() = runTest {
+        // Seed an already-archived note so the only transition we observe is archived →
+        // active. A single test that archives *and* unarchives in one turbine session
+        // would hit StateFlow deduplication: after unarchive, the overview state equals
+        // its pre-archive value by structural equality, so no emission fires and the
+        // assertion loop hangs. Splitting the directions keeps each transition visible.
+        val id = repository.createNote(title = "n")
+        repository.setNoteArchived(id, archived = true)
+        val vm = NoteOverviewViewModel(repository)
+
+        vm.state.test {
+            awaitLoadedMatching { it.archived.any { n -> n.id == id } }
+
+            repository.setNoteArchived(id, archived = false)
+
+            assertExactlyOneSectionUntil(id) { it.notes.any { n -> n.id == id } }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * Drains emissions until [terminalReached] holds, asserting on every Loaded tick
+     * that the note with [id] appears in exactly one of the two sections — the
+     * invariant the single-stream partition is designed to preserve end-to-end.
+     */
+    private suspend fun ReceiveTurbine<OverviewState>.assertExactlyOneSectionUntil(
+        id: Long,
+        terminalReached: (OverviewState.Loaded) -> Boolean,
+    ) {
+        while (true) {
+            val loaded = awaitItem() as? OverviewState.Loaded ?: continue
+            val inActive = loaded.notes.any { it.id == id }
+            val inArchived = loaded.archived.any { it.id == id }
+            assertThat(inActive || inArchived).isTrue()
+            assertThat(inActive && inArchived).isFalse()
+            if (terminalReached(loaded)) return
         }
     }
 
