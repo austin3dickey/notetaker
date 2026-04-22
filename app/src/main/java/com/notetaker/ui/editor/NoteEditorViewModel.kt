@@ -66,6 +66,16 @@ class NoteEditorViewModel(
         viewModelScope.launch { repository.deleteItem(item) }
     }
 
+    /**
+     * Deletes the owning note. Suspends until the repository write completes so the
+     * caller can navigate away only after the delete is durable — otherwise a fast
+     * back-navigation could race against the delete and leave the user staring at
+     * stale editor content.
+     */
+    suspend fun deleteNote() {
+        repository.deleteNote(noteId)
+    }
+
     companion object {
         private const val SUBSCRIPTION_TIMEOUT_MS = 5_000L
 

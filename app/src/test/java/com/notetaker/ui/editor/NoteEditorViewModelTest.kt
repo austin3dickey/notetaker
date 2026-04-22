@@ -138,6 +138,22 @@ class NoteEditorViewModelTest {
         }
     }
 
+    @Test
+    fun `deleteNote removes the note and state transitions to NotFound`() = runTest {
+        val noteId = repository.createNote(title = "gone")
+        val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
+
+        vm.state.test {
+            awaitLoaded()
+
+            vm.deleteNote()
+
+            assertThat(awaitSettled()).isEqualTo(EditorState.NotFound)
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertThat(repository.observeNote(noteId).first()).isNull()
+    }
+
     private suspend fun ReceiveTurbine<EditorState>.awaitSettled(): EditorState {
         var next = awaitItem()
         while (next is EditorState.Loading) next = awaitItem()

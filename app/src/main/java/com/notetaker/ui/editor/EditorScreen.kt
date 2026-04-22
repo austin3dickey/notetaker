@@ -17,8 +17,13 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -35,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +56,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notetaker.data.ChecklistItem
+import kotlinx.coroutines.launch
 
 /**
  * Compose entry point for a single note. Stateless against the ViewModel — all mutation
@@ -63,6 +70,7 @@ fun EditorScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     EditorScreenContent(
         state = state,
         onBack = onBack,
@@ -72,6 +80,15 @@ fun EditorScreen(
         onDeleteItem = viewModel::deleteItem,
         onEnterOnItem = { afterPos, remainder -> viewModel.addItemAfter(afterPos, remainder) },
         onAppendItem = { viewModel.appendItem() },
+        onDeleteNote = {
+            // Suspend on the repository delete before popping the stack. If we popped
+            // first, the back-stack transition could race the delete and flash stale
+            // editor content on its way out.
+            scope.launch {
+                viewModel.deleteNote()
+                onBack()
+            }
+        },
         modifier = modifier,
     )
 }
@@ -87,8 +104,13 @@ internal fun EditorScreenContent(
     onDeleteItem: (ChecklistItem) -> Unit,
     onEnterOnItem: (afterPosition: Int, remainder: String) -> Unit,
     onAppendItem: () -> Unit,
+    onDeleteNote: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val showMenu = state is EditorState.Loaded
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -97,6 +119,32 @@ internal fun EditorScreenContent(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (showMenu) {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier.testTag("editor-overflow"),
+                        ) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Delete") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Delete, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    showDeleteConfirm = true
+                                },
+                                modifier = Modifier.testTag("menu-delete"),
+                            )
+                        }
                     }
                 },
             )
@@ -117,6 +165,34 @@ internal fun EditorScreenContent(
             )
         }
     }
+
+    if (showDeleteConfirm) {
+        DeleteNoteDialog(
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                showDeleteConfirm = false
+                onDeleteNote()
+            },
+        )
+    }
+}
+
+@Composable
+private fun DeleteNoteDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete note?") },
+        text = { Text("This note and its items will be permanently deleted.") },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                modifier = Modifier.testTag("confirm-delete"),
+            ) { Text("Delete") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable

@@ -65,7 +65,7 @@ Goal: open the app, create a note, add/check/uncheck/delete items, leave and ret
 - [ ] Note-level undo/redo stack (cap depth, clear on close)
 - [ ] Background color picker (locally stored, not synced — see M5)
 - [ ] Archive / unarchive (archived are read-only, in their own section)
-- [ ] Delete note with confirmation dialog (blocked while shared — see M5)
+- [x] Delete note with confirmation dialog (blocked while shared — see M5)
 
 ## M3 — Item reordering and indentation
 
