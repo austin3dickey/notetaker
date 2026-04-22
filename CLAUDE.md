@@ -49,6 +49,7 @@ An Android app for people to share to-do lists.
 
 - Test-driven development is preferred; first, create tests for a feature, and then work on it until the tests succeed
 - Commit after every turn!
+- Don't commit directly to main
 - After each commit, the post-commit hook enqueues a roborev review in the
   background. Don't wait for me to ask — after every commit, run `roborev
   wait` (it blocks on the review; exits 0 on PASS, non-zero on FAIL or job
