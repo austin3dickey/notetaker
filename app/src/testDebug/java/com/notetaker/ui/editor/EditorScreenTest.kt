@@ -1,5 +1,8 @@
 package com.notetaker.ui.editor
 
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -24,6 +27,10 @@ class EditorScreenTest {
     val composeRule = createComposeRule()
 
     private val note = Note(id = 1L, title = "lunch", createdAt = 0L, updatedAt = 0L)
+
+    private val noTextEditAction = SemanticsMatcher("has no SetText action") { node ->
+        SemanticsActions.SetText !in node.config
+    }
 
     private fun item(
         id: Long,
@@ -287,6 +294,49 @@ class EditorScreenTest {
 
         // Click on a disabled Checkbox is a no-op; the callback must not fire.
         assertThat(toggled).isNull()
+    }
+
+    @Test
+    fun archived_title_field_exposes_no_text_edit_action() {
+        val archived = note.copy(title = "lunch", archived = true)
+
+        stubContent(
+            state = EditorState.Loaded(note = archived, unchecked = emptyList(), checked = emptyList()),
+        )
+
+        // BasicTextField(readOnly = true) removes the SetText semantic action, which
+        // is the mechanism both the IME and accessibility/automation services use to
+        // mutate text. Asserting its absence proves the field truly can't be edited
+        // rather than that our callback happens to no-op.
+        composeRule.onNodeWithTag("note-title").assert(noTextEditAction)
+    }
+
+    @Test
+    fun archived_item_field_exposes_no_text_edit_action() {
+        val archived = note.copy(archived = true)
+        val milk = item(1L, "milk")
+
+        stubContent(
+            state = EditorState.Loaded(note = archived, unchecked = listOf(milk), checked = emptyList()),
+        )
+
+        composeRule.onNodeWithTag("item-text-1").assert(noTextEditAction)
+    }
+
+    @Test
+    fun archived_row_never_shows_delete_button_even_when_focused() {
+        val archived = note.copy(archived = true)
+        val milk = item(1L, "milk")
+
+        stubContent(
+            state = EditorState.Loaded(note = archived, unchecked = listOf(milk), checked = emptyList()),
+        )
+
+        // Tapping a read-only field can still move focus to it (so the user can position
+        // the caret for copy/paste). The delete affordance, however, must stay hidden on
+        // archived rows regardless of focus.
+        composeRule.onNodeWithTag("item-text-1").performClick()
+        composeRule.onNodeWithTag("item-delete-1").assertDoesNotExist()
     }
 
     @Test

@@ -126,6 +126,35 @@ class NoteOverviewViewModelTest {
     }
 
     @Test
+    fun `archive toggle never emits a state where the note sits in both sections`() = runTest {
+        val id = repository.createNote(title = "n")
+        val vm = NoteOverviewViewModel(repository)
+
+        vm.state.test {
+            // Settle into the initial active state so the assertion loop only sees
+            // emissions produced by the archive toggle.
+            awaitLoadedMatching { it.notes.any { n -> n.id == id } }
+
+            repository.setNoteArchived(id, archived = true)
+
+            // Every Loaded emission derives from a single `observeAllNotes` snapshot,
+            // so the note must appear in exactly one section on every tick — never in
+            // both (the regression this unified stream is designed to prevent), and
+            // never in neither (it always exists in the DB).
+            var sawArchived = false
+            while (!sawArchived) {
+                val loaded = awaitItem() as? OverviewState.Loaded ?: continue
+                val inActive = loaded.notes.any { it.id == id }
+                val inArchived = loaded.archived.any { it.id == id }
+                assertThat(inActive || inArchived).isTrue()
+                assertThat(inActive && inArchived).isFalse()
+                if (inArchived) sawArchived = true
+            }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `createNote returns a new id`() = runTest {
         val vm = NoteOverviewViewModel(repository)
 
