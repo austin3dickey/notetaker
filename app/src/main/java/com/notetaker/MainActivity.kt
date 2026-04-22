@@ -14,11 +14,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val repository = (application as NotetakerApp).container.noteRepository
+        val container = (application as NotetakerApp).container
         setContent {
             NotetakerTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    NotetakerNavGraph(repository = repository)
+                    NotetakerNavGraph(
+                        repository = container.noteRepository,
+                        applicationScope = container.applicationScope,
+                    )
                 }
             }
         }

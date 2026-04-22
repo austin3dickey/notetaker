@@ -8,16 +8,29 @@ import com.notetaker.data.ChecklistItem
 import com.notetaker.data.Note
 import com.notetaker.data.NoteColor
 import com.notetaker.data.NoteRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class NoteEditorViewModel(
     private val noteId: Long,
     private val repository: NoteRepository,
+    private val externalScope: CoroutineScope,
 ) : ViewModel() {
+
+    // Latches true the first time we successfully load the note. Lives on the
+    // ViewModel (not composable-local state) so it survives configuration
+    // changes: if the user confirms delete and rotates before Room commits, the
+    // recreated composable still sees `wasLoaded=true` and pops on the NotFound
+    // transition instead of stranding the user on the "not found" screen.
+    private val _wasLoaded = MutableStateFlow(false)
+    val wasLoaded: StateFlow<Boolean> = _wasLoaded.asStateFlow()
 
     val state: StateFlow<EditorState> = combine(
         repository.observeNote(noteId),
@@ -32,6 +45,8 @@ class NoteEditorViewModel(
                 checked = items.filter { it.checked },
             )
         }
+    }.onEach { next ->
+        if (next is EditorState.Loaded) _wasLoaded.value = true
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS),
@@ -66,13 +81,31 @@ class NoteEditorViewModel(
         viewModelScope.launch { repository.deleteItem(item) }
     }
 
+    /**
+     * Deletes the owning note. Runs in [externalScope] (the application scope) so
+     * the write survives the ViewModel being cleared — if the user confirms delete
+     * and then back-navigates before the transaction commits, [viewModelScope]
+     * would cancel mid-delete and the note would still exist. Completion is
+     * observed by the UI through the state flow flipping to [EditorState.NotFound]
+     * once Room commits, so the screen can pop on that transition.
+     */
+    fun deleteNote() {
+        externalScope.launch {
+            repository.deleteNote(noteId)
+        }
+    }
+
     companion object {
         private const val SUBSCRIPTION_TIMEOUT_MS = 5_000L
 
-        fun factory(noteId: Long, repository: NoteRepository): Factory = object : Factory {
+        fun factory(
+            noteId: Long,
+            repository: NoteRepository,
+            externalScope: CoroutineScope,
+        ): Factory = object : Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                NoteEditorViewModel(noteId, repository) as T
+                NoteEditorViewModel(noteId, repository, externalScope) as T
         }
 
         const val NOTE_ID_KEY: String = "noteId"

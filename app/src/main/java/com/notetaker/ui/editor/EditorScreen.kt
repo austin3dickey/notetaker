@@ -17,8 +17,13 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -35,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +69,8 @@ fun EditorScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val wasLoaded by viewModel.wasLoaded.collectAsStateWithLifecycle()
+    AutoPopOnNoteRemoval(state = state, wasLoaded = wasLoaded, onPop = onBack)
     EditorScreenContent(
         state = state,
         onBack = onBack,
@@ -72,6 +80,7 @@ fun EditorScreen(
         onDeleteItem = viewModel::deleteItem,
         onEnterOnItem = { afterPos, remainder -> viewModel.addItemAfter(afterPos, remainder) },
         onAppendItem = { viewModel.appendItem() },
+        onDeleteNote = viewModel::deleteNote,
         modifier = modifier,
     )
 }
@@ -87,8 +96,13 @@ internal fun EditorScreenContent(
     onDeleteItem: (ChecklistItem) -> Unit,
     onEnterOnItem: (afterPosition: Int, remainder: String) -> Unit,
     onAppendItem: () -> Unit,
+    onDeleteNote: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val showMenu = state is EditorState.Loaded
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -97,6 +111,32 @@ internal fun EditorScreenContent(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (showMenu) {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier.testTag("editor-overflow"),
+                        ) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Delete") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Delete, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    showDeleteConfirm = true
+                                },
+                                modifier = Modifier.testTag("menu-delete"),
+                            )
+                        }
                     }
                 },
             )
@@ -117,6 +157,55 @@ internal fun EditorScreenContent(
             )
         }
     }
+
+    if (showDeleteConfirm) {
+        DeleteNoteDialog(
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                showDeleteConfirm = false
+                onDeleteNote()
+            },
+        )
+    }
+}
+
+/**
+ * Pops the back stack when the note we were editing disappears. Covers both the
+ * user-initiated delete (state flips Loaded → NotFound once Room commits) and the
+ * race where the current VM saw the note but an app-scoped delete from a prior VM
+ * lands. A NotFound that was there from the start (bogus nav arg, [wasLoaded]
+ * never true) keeps rendering the "not found" message instead.
+ *
+ * [wasLoaded] is sourced from the ViewModel (not composable-local state) so it
+ * survives configuration changes that recreate the composable mid-delete.
+ *
+ * Internal so Compose tests can drive it with synthetic inputs without standing
+ * up a full ViewModel.
+ */
+@Composable
+internal fun AutoPopOnNoteRemoval(state: EditorState, wasLoaded: Boolean, onPop: () -> Unit) {
+    val currentOnPop by rememberUpdatedState(onPop)
+    LaunchedEffect(state, wasLoaded) {
+        if (state is EditorState.NotFound && wasLoaded) currentOnPop()
+    }
+}
+
+@Composable
+private fun DeleteNoteDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete note?") },
+        text = { Text("This note and its items will be permanently deleted.") },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                modifier = Modifier.testTag("confirm-delete"),
+            ) { Text("Delete") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable

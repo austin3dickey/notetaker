@@ -3,6 +3,9 @@ package com.notetaker
 import android.content.Context
 import com.notetaker.data.NoteRepository
 import com.notetaker.data.NotetakerDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Poor-man's DI: one place that wires the app graph. Accessed through
@@ -16,4 +19,12 @@ class AppContainer(context: Context) {
         noteDao = database.noteDao(),
         itemDao = database.itemDao(),
     )
+
+    /**
+     * Scope for writes that must complete even if the launching `ViewModel` is
+     * cleared — e.g. note deletion, where a back-navigation mid-delete would
+     * otherwise cancel the Room transaction before it commits. `SupervisorJob`
+     * keeps one failing write from tearing the scope down for everything else.
+     */
+    val applicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 }

@@ -41,6 +41,7 @@ class EditorScreenTest {
         onDeleteItem: (ChecklistItem) -> Unit = {},
         onEnterOnItem: (Int, String) -> Unit = { _, _ -> },
         onAppendItem: () -> Unit = {},
+        onDeleteNote: () -> Unit = {},
     ) {
         composeRule.setContent {
             EditorScreenContent(
@@ -52,6 +53,7 @@ class EditorScreenTest {
                 onDeleteItem = onDeleteItem,
                 onEnterOnItem = onEnterOnItem,
                 onAppendItem = onAppendItem,
+                onDeleteNote = onDeleteNote,
             )
         }
     }
@@ -223,6 +225,63 @@ class EditorScreenTest {
 
         assertThat(deleted).isNull()
         assertThat(edits.last()).isEqualTo(1L to "")
+    }
+
+    @Test
+    fun overflow_menu_is_hidden_in_loading_state() {
+        stubContent(EditorState.Loading)
+
+        composeRule.onNodeWithTag("editor-overflow").assertDoesNotExist()
+    }
+
+    @Test
+    fun tapping_delete_shows_confirmation_without_invoking_callback() {
+        var deleted = 0
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            onDeleteNote = { deleted++ },
+        )
+
+        composeRule.onNodeWithTag("editor-overflow").performClick()
+        composeRule.onNodeWithTag("menu-delete").performClick()
+
+        // Dialog is up; the delete hasn't fired yet — the user still has to confirm.
+        composeRule.onNodeWithText("Delete note?").assertIsDisplayed()
+        assertThat(deleted).isEqualTo(0)
+    }
+
+    @Test
+    fun confirming_delete_invokes_onDeleteNote() {
+        var deleted = 0
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            onDeleteNote = { deleted++ },
+        )
+
+        composeRule.onNodeWithTag("editor-overflow").performClick()
+        composeRule.onNodeWithTag("menu-delete").performClick()
+        composeRule.onNodeWithTag("confirm-delete").performClick()
+
+        assertThat(deleted).isEqualTo(1)
+    }
+
+    @Test
+    fun cancelling_delete_dismisses_dialog_without_invoking_callback() {
+        var deleted = 0
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            onDeleteNote = { deleted++ },
+        )
+
+        composeRule.onNodeWithTag("editor-overflow").performClick()
+        composeRule.onNodeWithTag("menu-delete").performClick()
+        composeRule.onNodeWithText("Cancel").performClick()
+
+        composeRule.onNodeWithText("Delete note?").assertDoesNotExist()
+        assertThat(deleted).isEqualTo(0)
     }
 
     @Test
