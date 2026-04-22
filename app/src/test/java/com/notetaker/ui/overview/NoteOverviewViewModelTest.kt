@@ -93,7 +93,7 @@ class NoteOverviewViewModelTest {
     }
 
     @Test
-    fun `archived notes do not appear in overview`() = runTest {
+    fun `archived notes surface in the archived list and are filtered from active`() = runTest {
         val active = repository.createNote(title = "active")
         val archived = repository.createNote(title = "archived")
         repository.setNoteArchived(archived, archived = true)
@@ -101,8 +101,26 @@ class NoteOverviewViewModelTest {
         val vm = NoteOverviewViewModel(repository)
 
         vm.state.test {
-            val loaded = awaitLoadedMatching { it.notes.isNotEmpty() }
+            val loaded = awaitLoadedMatching { it.archived.isNotEmpty() && it.notes.isNotEmpty() }
             assertThat(loaded.notes.map { it.id }).containsExactly(active)
+            assertThat(loaded.archived.map { it.id }).containsExactly(archived)
+            assertThat(loaded.archived.single().title).isEqualTo("archived")
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `archived summaries omit preview lines`() = runTest {
+        val noteId = repository.createNote(title = "pantry")
+        repository.appendItem(noteId, "rice")
+        repository.appendItem(noteId, "beans")
+        repository.setNoteArchived(noteId, archived = true)
+
+        val vm = NoteOverviewViewModel(repository)
+
+        vm.state.test {
+            val loaded = awaitLoadedMatching { it.archived.isNotEmpty() }
+            assertThat(loaded.archived.single().previewLines).isEmpty()
             cancelAndIgnoreRemainingEvents()
         }
     }

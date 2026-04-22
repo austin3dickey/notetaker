@@ -17,26 +17,30 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * Drives the overview screen: a list of active notes plus a short preview of each
- * note's unchecked items.
+ * Drives the overview screen: active notes with unchecked-item previews and a parallel
+ * list of archived notes.
  *
- * The preview is derived by observing each active note's items flow. For a handful of
- * notes on-device that's negligible; if note counts grow large enough for N+1 flows
- * to matter, swap in a single JOIN query that returns note+preview rows directly.
+ * Active previews are derived per-note by observing each note's items flow. Archived
+ * notes render title-only (no preview), so we skip the per-note item subscription for
+ * them. For a handful of notes on-device the active N+1 is negligible; if note counts
+ * grow large enough to matter, swap in a single JOIN query that returns note+preview
+ * rows directly.
  */
 class NoteOverviewViewModel(
     private val repository: NoteRepository,
 ) : ViewModel() {
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val state: StateFlow<OverviewState> = repository.observeActive()
-        .flatMapLatest { notes -> summariesFlow(notes) }
-        .map<List<NoteSummary>, OverviewState> { OverviewState.Loaded(it) }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS),
-            initialValue = OverviewState.Loading,
-        )
+    val state: StateFlow<OverviewState> = combine(
+        repository.observeActive().flatMapLatest { notes -> summariesFlow(notes) },
+        repository.observeArchived().map { notes -> notes.map(::archivedSummary) },
+    ) { active, archived ->
+        OverviewState.Loaded(notes = active, archived = archived)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS),
+        initialValue = OverviewState.Loading,
+    )
 
     /** Creates a blank note and returns its id so the caller can navigate to it. */
     suspend fun createNote(): Long = repository.createNote()
@@ -58,6 +62,9 @@ class NoteOverviewViewModel(
         return NoteSummary(id = note.id, title = note.title, previewLines = preview)
     }
 
+    private fun archivedSummary(note: Note): NoteSummary =
+        NoteSummary(id = note.id, title = note.title, previewLines = emptyList())
+
     companion object {
         private const val SUBSCRIPTION_TIMEOUT_MS = 5_000L
         private const val PREVIEW_LINES = 2
@@ -73,7 +80,10 @@ class NoteOverviewViewModel(
 sealed interface OverviewState {
     data object Loading : OverviewState
 
-    data class Loaded(val notes: List<NoteSummary>) : OverviewState
+    data class Loaded(
+        val notes: List<NoteSummary>,
+        val archived: List<NoteSummary> = emptyList(),
+    ) : OverviewState
 }
 
 data class NoteSummary(
