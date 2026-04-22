@@ -85,59 +85,72 @@ class NoteRepository(
             itemId
         }
 
-    suspend fun updateItemText(item: ChecklistItem, text: String) = db.withTransaction {
-        itemDao.update(item.copy(text = text))
-        touchNote(item.noteId)
+    // Item mutations are keyed by [itemId], not a full [ChecklistItem]. Between an
+    // undo click and Room's emission of the restored state, the UI holds stale item
+    // references from the pre-restore world. Column-targeted UPDATEs and a by-id DELETE
+    // let those callbacks land cleanly on the restored row: we only carry the id and the
+    // new value across, so the stale fields on the held ChecklistItem can't clobber the
+    // restored ones.
+
+    suspend fun updateItemText(itemId: Long, text: String) = db.withTransaction {
+        val current = itemDao.findById(itemId) ?: return@withTransaction
+        itemDao.updateText(itemId, text)
+        touchNote(current.noteId)
+    }
+
+    suspend fun setItemChecked(itemId: Long, checked: Boolean) = db.withTransaction {
+        val current = itemDao.findById(itemId) ?: return@withTransaction
+        itemDao.updateChecked(itemId, checked)
+        touchNote(current.noteId)
+    }
+
+    suspend fun deleteItem(itemId: Long) = db.withTransaction {
+        val current = itemDao.findById(itemId) ?: return@withTransaction
+        itemDao.deleteById(itemId)
+        touchNote(current.noteId)
     }
 
     /**
-     * Atomic split: truncate [item] to [keepText] and insert a new item with
-     * [remainderText] immediately after it. Used by the editor's "Enter splits the row"
-     * path so a single keypress produces a single write (and therefore a single undo
-     * entry) even when the cursor was in the middle of the original text. Shifts later
-     * positions up by one in descending order, matching the invariant in [addItemAfter].
+     * Atomic split: truncate the item with [itemId] to [keepText] and insert a new row
+     * with [remainderText] immediately after it. Used by the editor's "Enter splits the
+     * row" path so a single keypress produces one write (and one undo entry) even when
+     * the cursor was in the middle of the original text. Shifts later positions up by
+     * one in descending order, matching the invariant in [addItemAfter]. No-op if the
+     * item has since been deleted.
      */
     suspend fun splitItem(
-        item: ChecklistItem,
+        itemId: Long,
         keepText: String,
         remainderText: String,
-    ): Long = db.withTransaction {
-        itemDao.update(item.copy(text = keepText))
-        val shifted = itemDao.getByNote(item.noteId)
+    ): Long? = db.withTransaction {
+        val current = itemDao.findById(itemId) ?: return@withTransaction null
+        itemDao.updateText(itemId, keepText)
+        val shifted = itemDao.getByNote(current.noteId)
             .asSequence()
-            .filter { it.position > item.position }
+            .filter { it.position > current.position }
             .map { it.copy(position = it.position + 1) }
             .sortedByDescending { it.position }
             .toList()
         if (shifted.isNotEmpty()) itemDao.updateAll(shifted)
         val newId = itemDao.insert(
             ChecklistItem(
-                noteId = item.noteId,
+                noteId = current.noteId,
                 text = remainderText,
-                position = item.position + 1,
+                position = current.position + 1,
             ),
         )
-        touchNote(item.noteId)
+        touchNote(current.noteId)
         newId
-    }
-
-    suspend fun setItemChecked(item: ChecklistItem, checked: Boolean) = db.withTransaction {
-        itemDao.update(item.copy(checked = checked))
-        touchNote(item.noteId)
-    }
-
-    suspend fun deleteItem(item: ChecklistItem) = db.withTransaction {
-        itemDao.delete(item)
-        touchNote(item.noteId)
     }
 
     /**
      * Overwrites a note's editable content with [title], [color], and [items] in one
-     * transaction. Used by the editor's undo/redo stack to restore a prior state: the
-     * title, color, and item list are replaced wholesale. Items are inserted with fresh
-     * IDs — snapshots preserve visible state (text, checked, position, indent), not row
-     * identity. No-op if the note has since been deleted, so a restore that lands after
-     * the note is gone silently drops instead of resurrecting it.
+     * transaction. Used by the editor's undo/redo stack to restore a prior state. Items
+     * are reinserted with their snapshotted IDs so row identity survives the restore —
+     * this matters because the UI may still hold `ChecklistItem` references from before
+     * the restore, and we want those references to keep pointing at a real row. No-op
+     * if the note has since been deleted, so a restore that lands after the note is
+     * gone silently drops instead of resurrecting it.
      *
      * `ChecklistItem.noteId` has `ForeignKey.CASCADE` on note delete, so
      * [ChecklistItemDao.deleteAllForNote] is safe to run inside the same transaction as
@@ -154,6 +167,7 @@ class NoteRepository(
         items.forEach { snap ->
             itemDao.insert(
                 ChecklistItem(
+                    id = snap.id,
                     noteId = noteId,
                     text = snap.text,
                     checked = snap.checked,

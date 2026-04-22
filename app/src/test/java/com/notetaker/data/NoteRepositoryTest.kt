@@ -101,7 +101,7 @@ class NoteRepositoryTest {
         repository.appendItem(id, "c")
 
         val middle = repository.observeItems(id).first()[1]
-        repository.setItemChecked(middle, checked = true)
+        repository.setItemChecked(middle.id, checked = true)
 
         val after = repository.observeItems(id).first()
         val b = after.single { it.text == "b" }
@@ -130,7 +130,7 @@ class NoteRepositoryTest {
 
         clockMs = START_TIME + 100
         val item = repository.observeItems(id).first().single()
-        repository.updateItemText(item, "after")
+        repository.updateItemText(item.id, "after")
 
         assertThat(repository.observeItems(id).first().single().text).isEqualTo("after")
         assertThat(repository.observeNote(id).first()!!.updatedAt).isEqualTo(START_TIME + 100)
@@ -155,7 +155,7 @@ class NoteRepositoryTest {
         repository.appendItem(id, "omega")
 
         val alpha = repository.observeItems(id).first().single { it.text == "alpha" }
-        repository.splitItem(alpha, keepText = "al", remainderText = "pha")
+        repository.splitItem(alpha.id, keepText = "al", remainderText = "pha")
 
         val items = repository.observeItems(id).first()
         assertThat(items.map { it.text }).containsExactly("al", "pha", "omega").inOrder()
@@ -168,17 +168,13 @@ class NoteRepositoryTest {
         repository.appendItem(id, "a")
         repository.appendItem(id, "b")
         val original = repository.observeItems(id).first()
-        val originalIds = original.map { it.id }.toSet()
 
         clockMs = START_TIME + 1_000
         repository.replaceNoteContents(
             noteId = id,
             title = "restored",
             color = NoteColor.BLUE,
-            items = listOf(
-                ItemSnapshot(text = "x", checked = false, position = 0, indent = 0),
-                ItemSnapshot(text = "y", checked = true, position = 1, indent = 1),
-            ),
+            items = original.map { it.copy(text = "new-${it.text}").toSnapshot() },
         )
 
         val note = repository.observeNote(id).first()!!
@@ -187,12 +183,10 @@ class NoteRepositoryTest {
         assertThat(note.updatedAt).isEqualTo(START_TIME + 1_000)
 
         val items = repository.observeItems(id).first()
-        assertThat(items.map { it.text }).containsExactly("x", "y").inOrder()
-        assertThat(items.map { it.checked }).containsExactly(false, true).inOrder()
-        assertThat(items.map { it.position }).containsExactly(0, 1).inOrder()
-        assertThat(items.map { it.indent }).containsExactly(0, 1).inOrder()
-        // Row identity intentionally drifts — old rows are gone, new rows get fresh IDs.
-        assertThat(items.map { it.id }.intersect(originalIds)).isEmpty()
+        assertThat(items.map { it.text }).containsExactly("new-a", "new-b").inOrder()
+        // Row identity must survive the restore so UI that still holds a pre-restore
+        // ChecklistItem reference keeps pointing at a live row.
+        assertThat(items.map { it.id }).containsExactly(original[0].id, original[1].id).inOrder()
     }
 
     @Test
@@ -204,7 +198,7 @@ class NoteRepositoryTest {
             noteId = id,
             title = "resurrected",
             color = NoteColor.BLUE,
-            items = listOf(ItemSnapshot("x", checked = false, position = 0, indent = 0)),
+            items = listOf(ItemSnapshot(id = 1L, text = "x", checked = false, position = 0, indent = 0)),
         )
 
         assertThat(repository.observeNote(id).first()).isNull()

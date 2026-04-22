@@ -80,7 +80,7 @@ class NoteOverviewViewModelTest {
         repository.appendItem(noteId, "a")
         repository.appendItem(noteId, "b")
         val a = repository.observeItems(noteId).first().single { it.text == "a" }
-        repository.setItemChecked(a, checked = true)
+        repository.setItemChecked(a.id, checked = true)
 
         val vm = NoteOverviewViewModel(repository)
 

@@ -1,13 +1,14 @@
 package com.notetaker.data
 
 /**
- * Minimal, ID-free view of a checklist item used by undo/redo snapshots. Preserves the
- * fields a user can influence in the editor (text, checked state, position, indent).
- * Row IDs aren't snapshotted: restoring a snapshot re-inserts items with fresh IDs, so
- * identity naturally drifts across undo/redo cycles — the visible content is what
- * undo/redo is about.
+ * A checklist item as it looked at a point in time. Used as the unit of storage for
+ * undo/redo snapshots. Preserves [id] so restoring a snapshot keeps row identity — any
+ * `ChecklistItem` reference the UI still holds from before the restore (say, a user who
+ * tapped a checkbox the instant after clicking undo) remains valid against the
+ * restored row.
  */
 data class ItemSnapshot(
+    val id: Long,
     val text: String,
     val checked: Boolean,
     val position: Int,
@@ -15,4 +16,10 @@ data class ItemSnapshot(
 )
 
 fun ChecklistItem.toSnapshot(): ItemSnapshot =
-    ItemSnapshot(text = text, checked = checked, position = position, indent = indent)
+    ItemSnapshot(
+        id = id,
+        text = text,
+        checked = checked,
+        position = position,
+        indent = indent,
+    )

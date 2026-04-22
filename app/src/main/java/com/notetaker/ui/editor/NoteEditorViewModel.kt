@@ -103,22 +103,25 @@ class NoteEditorViewModel(
      */
     fun splitItem(item: ChecklistItem, keepText: String, remainderText: String) {
         recordUndoPoint(UndoKey.Structural)
-        viewModelScope.launch { repository.splitItem(item, keepText, remainderText) }
+        viewModelScope.launch { repository.splitItem(item.id, keepText, remainderText) }
     }
 
     fun updateItemText(item: ChecklistItem, text: String) {
         recordUndoPoint(UndoKey.ItemTextEdit(item.id))
-        viewModelScope.launch { repository.updateItemText(item, text) }
+        viewModelScope.launch { repository.updateItemText(item.id, text) }
     }
 
     fun toggleChecked(item: ChecklistItem) {
         recordUndoPoint(UndoKey.Structural)
-        viewModelScope.launch { repository.setItemChecked(item, !item.checked) }
+        // `item.checked` can be stale if the UI still holds a pre-restore reference, but
+        // the user just tapped what they saw — honor their intent (the checkbox flips)
+        // rather than reading whatever happens to be in the DB right now.
+        viewModelScope.launch { repository.setItemChecked(item.id, !item.checked) }
     }
 
     fun deleteItem(item: ChecklistItem) {
         recordUndoPoint(UndoKey.Structural)
-        viewModelScope.launch { repository.deleteItem(item) }
+        viewModelScope.launch { repository.deleteItem(item.id) }
     }
 
     /**

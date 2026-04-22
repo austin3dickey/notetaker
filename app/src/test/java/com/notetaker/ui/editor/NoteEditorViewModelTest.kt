@@ -66,7 +66,7 @@ class NoteEditorViewModelTest {
         repository.appendItem(noteId, "milk")
         repository.appendItem(noteId, "bread")
         val bread = repository.observeItems(noteId).first().single { it.text == "bread" }
-        repository.setItemChecked(bread, checked = true)
+        repository.setItemChecked(bread.id, checked = true)
 
         val vm = NoteEditorViewModel(
             noteId = noteId,
@@ -602,6 +602,44 @@ class NoteEditorViewModelTest {
             val afterSecondRedo = awaitLoadedMatching { it.unchecked.size == 2 }
             assertThat(afterSecondRedo.unchecked.map { it.text }).containsExactly("a", "b").inOrder()
             assertThat(vm.canRedo.value).isFalse()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `toggle on a stale item reference after undo lands on the restored row`() = runTest {
+        // Regression for the restore-race finding: the user holds a ChecklistItem
+        // reference from before an undo, and the checkbox tap fires before Room emits
+        // the restored state. Because the restore reinserts items with their
+        // snapshotted ids, and the toggle goes through a column-targeted UPDATE keyed
+        // on that id, the tap lands on the restored row rather than on a dead id — and
+        // it doesn't clobber the row's (restored) text.
+        val noteId = repository.createNote()
+        repository.appendItem(noteId, "fresh")
+        val vm = NoteEditorViewModel(
+            noteId = noteId,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
+
+        vm.state.test {
+            val initial = awaitLoaded()
+            val item = initial.unchecked.single()
+
+            // Build up history: edit the text so undo has something to restore.
+            vm.updateItemText(item, "edited")
+            awaitLoadedMatching { it.unchecked.single().text == "edited" }
+
+            // The UI still has the pre-restore ChecklistItem reference [item]. Undo,
+            // then immediately toggle on that stale reference.
+            vm.undo()
+            vm.toggleChecked(item)
+
+            // Final state must reflect both: the undo restored the original text, and
+            // the toggle flipped `checked` without clobbering that text.
+            val finalState = awaitLoadedMatching { it.checked.any { it.text == "fresh" } }
+            assertThat(finalState.checked.map { it.text }).containsExactly("fresh")
+            assertThat(finalState.unchecked).isEmpty()
             cancelAndIgnoreRemainingEvents()
         }
     }
