@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -31,6 +32,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.notetaker.ui.theme.background
 import kotlinx.coroutines.launch
 
 @Composable
@@ -128,6 +130,7 @@ private fun NoteCard(summary: NoteSummary, onClick: () -> Unit) {
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .testTag("note-card-${summary.id}"),
+        colors = CardDefaults.cardColors(containerColor = summary.color.background()),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(

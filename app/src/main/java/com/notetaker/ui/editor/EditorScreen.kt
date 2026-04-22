@@ -1,5 +1,8 @@
 package com.notetaker.ui.editor
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,15 +13,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -30,6 +38,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,9 +47,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -50,6 +61,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notetaker.data.ChecklistItem
+import com.notetaker.data.NoteColor
+import com.notetaker.ui.theme.background
+import com.notetaker.ui.theme.displayName
 
 /**
  * Compose entry point for a single note. Stateless against the ViewModel — all mutation
@@ -72,6 +86,7 @@ fun EditorScreen(
         onDeleteItem = viewModel::deleteItem,
         onEnterOnItem = { afterPos, remainder -> viewModel.addItemAfter(afterPos, remainder) },
         onAppendItem = { viewModel.appendItem() },
+        onColorChange = viewModel::setColor,
         modifier = modifier,
     )
 }
@@ -87,10 +102,18 @@ internal fun EditorScreenContent(
     onDeleteItem: (ChecklistItem) -> Unit,
     onEnterOnItem: (afterPosition: Int, remainder: String) -> Unit,
     onAppendItem: () -> Unit,
+    onColorChange: (NoteColor) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The note's background tint bleeds into the top bar so the chrome doesn't
+    // clash with the body. When unloaded or on the default color we fall back to
+    // the theme's surface via NoteColor.NONE.
+    val activeColor = (state as? EditorState.Loaded)?.note?.color ?: NoteColor.NONE
+    val background = activeColor.background()
+
     Scaffold(
         modifier = modifier,
+        containerColor = background,
         topBar = {
             TopAppBar(
                 title = { Text("Note") },
@@ -99,6 +122,15 @@ internal fun EditorScreenContent(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    if (state is EditorState.Loaded) {
+                        ColorPickerAction(
+                            selected = state.note.color,
+                            onColorChange = onColorChange,
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = background),
             )
         },
     ) { padding ->
@@ -118,6 +150,97 @@ internal fun EditorScreenContent(
         }
     }
 }
+
+@Composable
+private fun ColorPickerAction(
+    selected: NoteColor,
+    onColorChange: (NoteColor) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    IconButton(
+        onClick = { expanded = true },
+        modifier = Modifier.testTag("color-picker-button"),
+    ) {
+        Icon(Icons.Filled.Palette, contentDescription = "Change color")
+    }
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = { expanded = false },
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NoteColor.entries.forEach { color ->
+                ColorSwatch(
+                    color = color,
+                    isSelected = color == selected,
+                    onClick = {
+                        expanded = false
+                        onColorChange(color)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColorSwatch(
+    color: NoteColor,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    val fill = color.background()
+    // A subtle border keeps NONE and very light swatches visible against the menu
+    // surface, and doubles as the selection outline when brightened.
+    val borderColor =
+        if (isSelected) MaterialTheme.colorScheme.primary
+        else LocalContentColor.current.copy(alpha = 0.25f)
+    val borderWidth = if (isSelected) 2.dp else 1.dp
+    Box(
+        modifier = Modifier
+            .size(SWATCH_SIZE)
+            .clip(CircleShape)
+            .background(fill)
+            .border(borderWidth, borderColor, CircleShape)
+            .clickable(onClick = onClick)
+            .testTag("color-swatch-${color.name}")
+            .semantics { contentDescription = color.displayName() },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (color == NoteColor.NONE) {
+            // A slash makes "no color" legible at swatch size — the empty surface
+            // alone reads as "not yet loaded" more than "default".
+            Text(
+                text = "∅",
+                color = LocalContentColor.current.copy(alpha = 0.6f),
+            )
+        }
+        if (isSelected) {
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = contrastOn(fill),
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Returns black or white depending on the luminance of [background], so the
+ * selection checkmark stays legible regardless of swatch color. Uses the
+ * relative-luminance formula from WCAG (approximate; we don't bother
+ * linearising since all swatches live in a narrow brightness band).
+ */
+private fun contrastOn(background: Color): Color {
+    val luminance = 0.299 * background.red + 0.587 * background.green + 0.114 * background.blue
+    return if (luminance > 0.6) Color.Black else Color.White
+}
+
+private val SWATCH_SIZE = 32.dp
 
 @Composable
 private fun LoadingIndicator(padding: PaddingValues) {

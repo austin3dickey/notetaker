@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider.Factory
 import androidx.lifecycle.viewModelScope
 import com.notetaker.data.ChecklistItem
 import com.notetaker.data.Note
+import com.notetaker.data.NoteColor
 import com.notetaker.data.NoteRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -55,7 +56,12 @@ class NoteOverviewViewModel(
             .take(PREVIEW_LINES)
             .map { it.text }
             .toList()
-        return NoteSummary(id = note.id, title = note.title, previewLines = preview)
+        return NoteSummary(
+            id = note.id,
+            title = note.title,
+            previewLines = preview,
+            color = note.color,
+        )
     }
 
     companion object {
@@ -80,4 +86,5 @@ data class NoteSummary(
     val id: Long,
     val title: String,
     val previewLines: List<String>,
+    val color: NoteColor = NoteColor.NONE,
 )
