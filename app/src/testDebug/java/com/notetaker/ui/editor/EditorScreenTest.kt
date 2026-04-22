@@ -1,6 +1,8 @@
 package com.notetaker.ui.editor
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -34,7 +36,11 @@ class EditorScreenTest {
 
     private fun stubContent(
         state: EditorState,
+        canUndo: Boolean = false,
+        canRedo: Boolean = false,
         onBack: () -> Unit = {},
+        onUndo: () -> Unit = {},
+        onRedo: () -> Unit = {},
         onTitleChange: (String) -> Unit = {},
         onItemTextChange: (ChecklistItem, String) -> Unit = { _, _ -> },
         onToggleItem: (ChecklistItem) -> Unit = {},
@@ -46,7 +52,11 @@ class EditorScreenTest {
         composeRule.setContent {
             EditorScreenContent(
                 state = state,
+                canUndo = canUndo,
+                canRedo = canRedo,
                 onBack = onBack,
+                onUndo = onUndo,
+                onRedo = onRedo,
                 onTitleChange = onTitleChange,
                 onItemTextChange = onItemTextChange,
                 onToggleItem = onToggleItem,
@@ -282,6 +292,58 @@ class EditorScreenTest {
 
         composeRule.onNodeWithText("Delete note?").assertDoesNotExist()
         assertThat(deleted).isEqualTo(0)
+    }
+
+    @Test
+    fun undo_and_redo_buttons_are_disabled_when_stacks_are_empty() {
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            canUndo = false,
+            canRedo = false,
+        )
+
+        composeRule.onNodeWithTag("editor-undo").assertIsNotEnabled()
+        composeRule.onNodeWithTag("editor-redo").assertIsNotEnabled()
+    }
+
+    @Test
+    fun undo_button_enables_and_invokes_callback_when_canUndo_is_true() {
+        var undos = 0
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            canUndo = true,
+            onUndo = { undos++ },
+        )
+
+        composeRule.onNodeWithTag("editor-undo").assertIsEnabled()
+        composeRule.onNodeWithTag("editor-undo").performClick()
+
+        assertThat(undos).isEqualTo(1)
+    }
+
+    @Test
+    fun redo_button_enables_and_invokes_callback_when_canRedo_is_true() {
+        var redos = 0
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            canRedo = true,
+            onRedo = { redos++ },
+        )
+
+        composeRule.onNodeWithTag("editor-redo").assertIsEnabled()
+        composeRule.onNodeWithTag("editor-redo").performClick()
+
+        assertThat(redos).isEqualTo(1)
+    }
+
+    @Test
+    fun undo_and_redo_buttons_are_hidden_in_loading_state() {
+        stubContent(EditorState.Loading)
+
+        composeRule.onNodeWithTag("editor-undo").assertDoesNotExist()
+        composeRule.onNodeWithTag("editor-redo").assertDoesNotExist()
     }
 
     @Test

@@ -149,6 +149,71 @@ class NoteRepositoryTest {
     }
 
     @Test
+    fun `replaceNoteContents overwrites title color and items in one transaction`() = runTest {
+        val id = repository.createNote(title = "orig", color = NoteColor.NONE)
+        repository.appendItem(id, "a")
+        repository.appendItem(id, "b")
+        val original = repository.observeItems(id).first()
+        val originalIds = original.map { it.id }.toSet()
+
+        clockMs = START_TIME + 1_000
+        repository.replaceNoteContents(
+            noteId = id,
+            title = "restored",
+            color = NoteColor.BLUE,
+            items = listOf(
+                ItemSnapshot(text = "x", checked = false, position = 0, indent = 0),
+                ItemSnapshot(text = "y", checked = true, position = 1, indent = 1),
+            ),
+        )
+
+        val note = repository.observeNote(id).first()!!
+        assertThat(note.title).isEqualTo("restored")
+        assertThat(note.color).isEqualTo(NoteColor.BLUE)
+        assertThat(note.updatedAt).isEqualTo(START_TIME + 1_000)
+
+        val items = repository.observeItems(id).first()
+        assertThat(items.map { it.text }).containsExactly("x", "y").inOrder()
+        assertThat(items.map { it.checked }).containsExactly(false, true).inOrder()
+        assertThat(items.map { it.position }).containsExactly(0, 1).inOrder()
+        assertThat(items.map { it.indent }).containsExactly(0, 1).inOrder()
+        // Row identity intentionally drifts — old rows are gone, new rows get fresh IDs.
+        assertThat(items.map { it.id }.intersect(originalIds)).isEmpty()
+    }
+
+    @Test
+    fun `replaceNoteContents is a no-op when the note is gone`() = runTest {
+        val id = repository.createNote(title = "ghost")
+        repository.deleteNote(id)
+
+        repository.replaceNoteContents(
+            noteId = id,
+            title = "resurrected",
+            color = NoteColor.BLUE,
+            items = listOf(ItemSnapshot("x", checked = false, position = 0, indent = 0)),
+        )
+
+        assertThat(repository.observeNote(id).first()).isNull()
+        assertThat(repository.observeItems(id).first()).isEmpty()
+    }
+
+    @Test
+    fun `replaceNoteContents with empty item list clears the checklist`() = runTest {
+        val id = repository.createNote()
+        repository.appendItem(id, "a")
+        repository.appendItem(id, "b")
+
+        repository.replaceNoteContents(
+            noteId = id,
+            title = "",
+            color = NoteColor.NONE,
+            items = emptyList(),
+        )
+
+        assertThat(repository.observeItems(id).first()).isEmpty()
+    }
+
+    @Test
     fun `setNoteArchived moves the note between active and archived queries`() = runTest {
         val id = repository.createNote(title = "x")
         assertThat(repository.observeActive().first().map { it.id }).containsExactly(id)

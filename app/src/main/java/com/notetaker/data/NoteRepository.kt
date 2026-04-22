@@ -100,6 +100,40 @@ class NoteRepository(
         touchNote(item.noteId)
     }
 
+    /**
+     * Overwrites a note's editable content with [title], [color], and [items] in one
+     * transaction. Used by the editor's undo/redo stack to restore a prior state: the
+     * title, color, and item list are replaced wholesale. Items are inserted with fresh
+     * IDs — snapshots preserve visible state (text, checked, position, indent), not row
+     * identity. No-op if the note has since been deleted, so a restore that lands after
+     * the note is gone silently drops instead of resurrecting it.
+     *
+     * `ChecklistItem.noteId` has `ForeignKey.CASCADE` on note delete, so
+     * [ChecklistItemDao.deleteAllForNote] is safe to run inside the same transaction as
+     * the note lookup: if the note existed at the start, it still exists at commit.
+     */
+    suspend fun replaceNoteContents(
+        noteId: Long,
+        title: String,
+        color: NoteColor,
+        items: List<ItemSnapshot>,
+    ) = db.withTransaction {
+        val current = noteDao.findById(noteId) ?: return@withTransaction
+        itemDao.deleteAllForNote(noteId)
+        items.forEach { snap ->
+            itemDao.insert(
+                ChecklistItem(
+                    noteId = noteId,
+                    text = snap.text,
+                    checked = snap.checked,
+                    position = snap.position,
+                    indent = snap.indent,
+                ),
+            )
+        }
+        noteDao.update(current.copy(title = title, color = color, updatedAt = clock()))
+    }
+
     private suspend fun touchNote(noteId: Long) {
         val current = noteDao.findById(noteId) ?: return
         noteDao.update(current.copy(updatedAt = clock()))

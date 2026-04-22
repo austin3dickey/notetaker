@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
@@ -70,10 +72,16 @@ fun EditorScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val wasLoaded by viewModel.wasLoaded.collectAsStateWithLifecycle()
+    val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
+    val canRedo by viewModel.canRedo.collectAsStateWithLifecycle()
     AutoPopOnNoteRemoval(state = state, wasLoaded = wasLoaded, onPop = onBack)
     EditorScreenContent(
         state = state,
+        canUndo = canUndo,
+        canRedo = canRedo,
         onBack = onBack,
+        onUndo = viewModel::undo,
+        onRedo = viewModel::redo,
         onTitleChange = viewModel::setTitle,
         onItemTextChange = viewModel::updateItemText,
         onToggleItem = viewModel::toggleChecked,
@@ -89,7 +97,11 @@ fun EditorScreen(
 @Composable
 internal fun EditorScreenContent(
     state: EditorState,
+    canUndo: Boolean,
+    canRedo: Boolean,
     onBack: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
     onTitleChange: (String) -> Unit,
     onItemTextChange: (ChecklistItem, String) -> Unit,
     onToggleItem: (ChecklistItem) -> Unit,
@@ -115,6 +127,26 @@ internal fun EditorScreenContent(
                 },
                 actions = {
                     if (showMenu) {
+                        IconButton(
+                            onClick = onUndo,
+                            enabled = canUndo,
+                            modifier = Modifier.testTag("editor-undo"),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Undo,
+                                contentDescription = "Undo",
+                            )
+                        }
+                        IconButton(
+                            onClick = onRedo,
+                            enabled = canRedo,
+                            modifier = Modifier.testTag("editor-redo"),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Redo,
+                                contentDescription = "Redo",
+                            )
+                        }
                         IconButton(
                             onClick = { menuExpanded = true },
                             modifier = Modifier.testTag("editor-overflow"),

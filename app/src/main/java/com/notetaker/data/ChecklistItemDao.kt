@@ -32,4 +32,7 @@ interface ChecklistItemDao {
 
     @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM checklist_items WHERE noteId = :noteId")
     suspend fun nextPosition(noteId: Long): Int
+
+    @Query("DELETE FROM checklist_items WHERE noteId = :noteId")
+    suspend fun deleteAllForNote(noteId: Long)
 }
