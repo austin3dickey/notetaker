@@ -20,6 +20,11 @@ import kotlinx.coroutines.flow.stateIn
  * Drives the overview screen: active notes with unchecked-item previews and a parallel
  * list of archived notes.
  *
+ * Both lists derive from a single `observeAllNotes()` stream and are partitioned in
+ * memory so they always reflect the same database snapshot — combining two separate
+ * active/archived flows would let an archive toggle briefly emit a state where a note
+ * appears in both sections (or neither) depending on observer ordering.
+ *
  * Active previews are derived per-note by observing each note's items flow. Archived
  * notes render title-only (no preview), so we skip the per-note item subscription for
  * them. For a handful of notes on-device the active N+1 is negligible; if note counts
@@ -31,16 +36,21 @@ class NoteOverviewViewModel(
 ) : ViewModel() {
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val state: StateFlow<OverviewState> = combine(
-        repository.observeActive().flatMapLatest { notes -> summariesFlow(notes) },
-        repository.observeArchived().map { notes -> notes.map(::archivedSummary) },
-    ) { active, archived ->
-        OverviewState.Loaded(notes = active, archived = archived)
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS),
-        initialValue = OverviewState.Loading,
-    )
+    val state: StateFlow<OverviewState> = repository.observeAllNotes()
+        .flatMapLatest { notes ->
+            val (archived, active) = notes.partition { it.archived }
+            summariesFlow(active).map { activeSummaries ->
+                OverviewState.Loaded(
+                    notes = activeSummaries,
+                    archived = archived.map(::archivedSummary),
+                )
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS),
+            initialValue = OverviewState.Loading,
+        )
 
     /** Creates a blank note and returns its id so the caller can navigate to it. */
     suspend fun createNote(): Long = repository.createNote()

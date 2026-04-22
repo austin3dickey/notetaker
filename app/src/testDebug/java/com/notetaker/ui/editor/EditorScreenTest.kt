@@ -1,6 +1,8 @@
 package com.notetaker.ui.editor
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -41,6 +43,7 @@ class EditorScreenTest {
         onDeleteItem: (ChecklistItem) -> Unit = {},
         onEnterOnItem: (Int, String) -> Unit = { _, _ -> },
         onAppendItem: () -> Unit = {},
+        onToggleArchived: (Boolean) -> Unit = {},
     ) {
         composeRule.setContent {
             EditorScreenContent(
@@ -52,6 +55,7 @@ class EditorScreenTest {
                 onDeleteItem = onDeleteItem,
                 onEnterOnItem = onEnterOnItem,
                 onAppendItem = onAppendItem,
+                onToggleArchived = onToggleArchived,
             )
         }
     }
@@ -223,6 +227,77 @@ class EditorScreenTest {
 
         assertThat(deleted).isNull()
         assertThat(edits.last()).isEqualTo(1L to "")
+    }
+
+    @Test
+    fun overflow_menu_on_active_note_triggers_archive() {
+        val toggles = mutableListOf<Boolean>()
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = emptyList()),
+            onToggleArchived = { toggles += it },
+        )
+
+        composeRule.onNodeWithTag("editor-overflow").performClick()
+        composeRule.onNodeWithText("Archive").performClick()
+
+        assertThat(toggles).containsExactly(true)
+    }
+
+    @Test
+    fun overflow_menu_on_archived_note_triggers_unarchive() {
+        val archived = note.copy(archived = true)
+        val toggles = mutableListOf<Boolean>()
+
+        stubContent(
+            state = EditorState.Loaded(note = archived, unchecked = emptyList(), checked = emptyList()),
+            onToggleArchived = { toggles += it },
+        )
+
+        composeRule.onNodeWithTag("editor-overflow").performClick()
+        composeRule.onNodeWithText("Unarchive").performClick()
+
+        assertThat(toggles).containsExactly(false)
+    }
+
+    @Test
+    fun archived_editor_hides_add_item_button() {
+        val archived = note.copy(archived = true)
+
+        stubContent(
+            state = EditorState.Loaded(note = archived, unchecked = emptyList(), checked = emptyList()),
+        )
+
+        composeRule.onNodeWithTag("add-item").assertDoesNotExist()
+    }
+
+    @Test
+    fun archived_editor_disables_checkboxes_and_suppresses_toggle() {
+        val archived = note.copy(archived = true)
+        val milk = item(1L, "milk")
+        var toggled: ChecklistItem? = null
+
+        stubContent(
+            state = EditorState.Loaded(note = archived, unchecked = listOf(milk), checked = emptyList()),
+            onToggleItem = { toggled = it },
+        )
+
+        composeRule.onNodeWithTag("item-checkbox-1").assertIsNotEnabled()
+        composeRule.onNodeWithTag("item-checkbox-1").performClick()
+
+        // Click on a disabled Checkbox is a no-op; the callback must not fire.
+        assertThat(toggled).isNull()
+    }
+
+    @Test
+    fun active_editor_keeps_checkboxes_enabled() {
+        val milk = item(1L, "milk")
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = listOf(milk), checked = emptyList()),
+        )
+
+        composeRule.onNodeWithTag("item-checkbox-1").assertIsEnabled()
     }
 
     @Test

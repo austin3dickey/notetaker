@@ -77,8 +77,13 @@ internal fun OverviewScreenContent(
         when (state) {
             OverviewState.Loading -> Loading(padding)
             is OverviewState.Loaded ->
-                if (state.notes.isEmpty()) Empty(padding)
-                else NoteList(state.notes, padding, onOpenNote)
+                if (state.notes.isEmpty() && state.archived.isEmpty()) Empty(padding)
+                else NoteList(
+                    active = state.notes,
+                    archived = state.archived,
+                    padding = padding,
+                    onOpenNote = onOpenNote,
+                )
         }
     }
 }
@@ -106,7 +111,8 @@ private fun Empty(padding: PaddingValues) {
 
 @Composable
 private fun NoteList(
-    notes: List<NoteSummary>,
+    active: List<NoteSummary>,
+    archived: List<NoteSummary>,
     padding: PaddingValues,
     onOpenNote: (Long) -> Unit,
 ) {
@@ -115,10 +121,29 @@ private fun NoteList(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(items = notes, key = { it.id }) { summary ->
+        items(items = active, key = { "a-${it.id}" }) { summary ->
             NoteCard(summary = summary, onClick = { onOpenNote(summary.id) })
         }
+
+        if (archived.isNotEmpty()) {
+            item(key = "archived-header") { ArchivedHeader() }
+            items(items = archived, key = { "x-${it.id}" }) { summary ->
+                NoteCard(summary = summary, onClick = { onOpenNote(summary.id) })
+            }
+        }
     }
+}
+
+@Composable
+private fun ArchivedHeader() {
+    Text(
+        text = "Archived",
+        style = MaterialTheme.typography.titleSmall,
+        color = LocalContentColor.current.copy(alpha = 0.6f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("archived-header"),
+    )
 }
 
 @Composable

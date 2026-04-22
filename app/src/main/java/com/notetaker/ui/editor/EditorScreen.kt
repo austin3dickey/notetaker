@@ -17,8 +17,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -72,6 +75,7 @@ fun EditorScreen(
         onDeleteItem = viewModel::deleteItem,
         onEnterOnItem = { afterPos, remainder -> viewModel.addItemAfter(afterPos, remainder) },
         onAppendItem = { viewModel.appendItem() },
+        onToggleArchived = { archived -> viewModel.setArchived(archived) },
         modifier = modifier,
     )
 }
@@ -87,6 +91,7 @@ internal fun EditorScreenContent(
     onDeleteItem: (ChecklistItem) -> Unit,
     onEnterOnItem: (afterPosition: Int, remainder: String) -> Unit,
     onAppendItem: () -> Unit,
+    onToggleArchived: (archived: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -97,6 +102,14 @@ internal fun EditorScreenContent(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (state is EditorState.Loaded) {
+                        OverflowMenu(
+                            archived = state.note.archived,
+                            onToggleArchived = onToggleArchived,
+                        )
                     }
                 },
             )
@@ -116,6 +129,30 @@ internal fun EditorScreenContent(
                 onAppendItem = onAppendItem,
             )
         }
+    }
+}
+
+@Composable
+private fun OverflowMenu(
+    archived: Boolean,
+    onToggleArchived: (archived: Boolean) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    IconButton(
+        onClick = { expanded = true },
+        modifier = Modifier.testTag("editor-overflow"),
+    ) {
+        Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+    }
+    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenuItem(
+            text = { Text(if (archived) "Unarchive" else "Archive") },
+            onClick = {
+                expanded = false
+                onToggleArchived(!archived)
+            },
+            modifier = Modifier.testTag("editor-archive-toggle"),
+        )
     }
 }
 
@@ -146,24 +183,30 @@ private fun LoadedEditor(
     onEnterOnItem: (afterPosition: Int, remainder: String) -> Unit,
     onAppendItem: () -> Unit,
 ) {
+    val readOnly = state.note.archived
+
     // When we add a new item after position P, we expect it to appear at position P+1.
     // We stash that position and, once a row at that position mounts, hand it a
     // FocusRequester so the keyboard pops up on the fresh row without a user tap.
     var pendingFocusPosition by remember { mutableStateOf<Int?>(null) }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(padding),
+        modifier = Modifier.fillMaxSize().padding(padding).testTag("editor-list"),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         item(key = "title") {
-            TitleField(title = state.note.title, onTitleChange = onTitleChange)
+            TitleField(
+                title = state.note.title,
+                onTitleChange = onTitleChange,
+                readOnly = readOnly,
+            )
         }
 
         items(items = state.unchecked, key = { "u-${it.id}" }) { item ->
             ChecklistRow(
                 item = item,
-                requestFocus = pendingFocusPosition == item.position,
+                requestFocus = !readOnly && pendingFocusPosition == item.position,
                 onFocusApplied = { pendingFocusPosition = null },
                 onTextChange = { onItemTextChange(item, it) },
                 onToggle = { onToggleItem(item) },
@@ -172,21 +215,24 @@ private fun LoadedEditor(
                     pendingFocusPosition = item.position + 1
                     onEnterOnItem(item.position, remainder)
                 },
-                splittingEnabled = true,
+                splittingEnabled = !readOnly,
+                readOnly = readOnly,
             )
         }
 
-        item(key = "add-row") {
-            TextButton(
-                onClick = {
-                    // Appending always lands at the end; no need to track focus position
-                    // because the user initiated the action deliberately.
-                    onAppendItem()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("add-item"),
-            ) { Text("+ Add item") }
+        if (!readOnly) {
+            item(key = "add-row") {
+                TextButton(
+                    onClick = {
+                        // Appending always lands at the end; no need to track focus position
+                        // because the user initiated the action deliberately.
+                        onAppendItem()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("add-item"),
+                ) { Text("+ Add item") }
+            }
         }
 
         if (state.checked.isNotEmpty()) {
@@ -210,6 +256,7 @@ private fun LoadedEditor(
                     // part of the row's shared API.
                     onEnter = {},
                     splittingEnabled = false,
+                    readOnly = readOnly,
                 )
             }
         }
@@ -226,7 +273,11 @@ private fun LoadedEditor(
 private const val ZWSP: String = "\u200B"
 
 @Composable
-private fun TitleField(title: String, onTitleChange: (String) -> Unit) {
+private fun TitleField(
+    title: String,
+    onTitleChange: (String) -> Unit,
+    readOnly: Boolean,
+) {
     var tfv by remember { mutableStateOf(TextFieldValue(title, TextRange(title.length))) }
     // Sync with external updates — without this the field would display stale text
     // after a title change from another writer (or after undo/redo in M2) and the
@@ -243,6 +294,7 @@ private fun TitleField(title: String, onTitleChange: (String) -> Unit) {
             tfv = sanitized
             if (sanitized.text != title) onTitleChange(sanitized.text)
         },
+        readOnly = readOnly,
         textStyle = LocalTextStyle.current.merge(MaterialTheme.typography.titleLarge),
         cursorBrush = androidx.compose.ui.graphics.SolidColor(LocalContentColor.current),
         decorationBox = { inner ->
@@ -274,6 +326,7 @@ private fun ChecklistRow(
     onDelete: () -> Unit,
     onEnter: (remainder: String) -> Unit,
     splittingEnabled: Boolean,
+    readOnly: Boolean,
 ) {
     var tfv by remember(item.id) {
         mutableStateOf(TextFieldValue(ZWSP + item.text, TextRange(ZWSP.length + item.text.length)))
@@ -304,6 +357,7 @@ private fun ChecklistRow(
         Checkbox(
             checked = item.checked,
             onCheckedChange = { onToggle() },
+            enabled = !readOnly,
             modifier = Modifier.testTag("item-checkbox-${item.id}"),
         )
 
@@ -329,6 +383,7 @@ private fun ChecklistRow(
                     splittingEnabled = splittingEnabled,
                 )
             },
+            readOnly = readOnly,
             textStyle = style,
             cursorBrush = androidx.compose.ui.graphics.SolidColor(textColor),
             modifier = Modifier
@@ -338,7 +393,7 @@ private fun ChecklistRow(
                 .onFocusChanged { focused = it.isFocused },
         )
 
-        if (focused) {
+        if (focused && !readOnly) {
             IconButton(
                 onClick = onDelete,
                 modifier = Modifier.testTag("item-delete-${item.id}"),

@@ -9,11 +9,14 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface NoteDao {
-    @Query("SELECT * FROM notes WHERE archived = 0 ORDER BY updatedAt DESC, id DESC")
-    fun observeActive(): Flow<List<Note>>
-
-    @Query("SELECT * FROM notes WHERE archived = 1 ORDER BY updatedAt DESC, id DESC")
-    fun observeArchived(): Flow<List<Note>>
+    /**
+     * Emits every note — active and archived — in one snapshot. Callers that need to
+     * render both sections (e.g. the overview) partition in memory so both lists come
+     * from the same read and can't fall out of sync mid-update. `id DESC` tiebreaks
+     * equal `updatedAt` so ordering is deterministic when timestamps collide.
+     */
+    @Query("SELECT * FROM notes ORDER BY updatedAt DESC, id DESC")
+    fun observeAll(): Flow<List<Note>>
 
     @Query("SELECT * FROM notes WHERE id = :id")
     fun observeById(id: Long): Flow<Note?>

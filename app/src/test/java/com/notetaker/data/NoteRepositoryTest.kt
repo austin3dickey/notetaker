@@ -149,15 +149,17 @@ class NoteRepositoryTest {
     }
 
     @Test
-    fun `setNoteArchived moves the note between active and archived queries`() = runTest {
+    fun `setNoteArchived flips the archived flag on the note`() = runTest {
         val id = repository.createNote(title = "x")
-        assertThat(repository.observeActive().first().map { it.id }).containsExactly(id)
-        assertThat(repository.observeArchived().first()).isEmpty()
+        assertThat(repository.observeNote(id).first()!!.archived).isFalse()
 
         repository.setNoteArchived(id, archived = true)
 
-        assertThat(repository.observeActive().first()).isEmpty()
-        assertThat(repository.observeArchived().first().map { it.id }).containsExactly(id)
+        assertThat(repository.observeNote(id).first()!!.archived).isTrue()
+
+        repository.setNoteArchived(id, archived = false)
+
+        assertThat(repository.observeNote(id).first()!!.archived).isFalse()
     }
 
     private companion object {
