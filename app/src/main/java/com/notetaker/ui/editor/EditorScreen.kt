@@ -172,6 +172,7 @@ private fun LoadedEditor(
                     pendingFocusPosition = item.position + 1
                     onEnterOnItem(item.position, remainder)
                 },
+                splittingEnabled = true,
             )
         }
 
@@ -205,7 +206,10 @@ private fun LoadedEditor(
                     onTextChange = { onItemTextChange(item, it) },
                     onToggle = { onToggleItem(item) },
                     onDelete = { onDeleteItem(item) },
-                    onEnter = { /* Enter on a checked item is a no-op */ },
+                    // Checked rows don't split on Enter, so this never runs — but it's
+                    // part of the row's shared API.
+                    onEnter = {},
+                    splittingEnabled = false,
                 )
             }
         }
@@ -269,6 +273,7 @@ private fun ChecklistRow(
     onToggle: () -> Unit,
     onDelete: () -> Unit,
     onEnter: (remainder: String) -> Unit,
+    splittingEnabled: Boolean,
 ) {
     var tfv by remember(item.id) {
         mutableStateOf(TextFieldValue(ZWSP + item.text, TextRange(ZWSP.length + item.text.length)))
@@ -320,6 +325,7 @@ private fun ChecklistRow(
                     onTextChange = onTextChange,
                     onEnter = onEnter,
                     onBackspaceOnEmpty = onDelete,
+                    splittingEnabled = splittingEnabled,
                 )
             },
             textStyle = style,
@@ -350,9 +356,22 @@ private fun ChecklistRow(
 }
 
 /**
- * Routes a raw [TextFieldValue] emission from a checklist row into one of four outcomes.
- * Keeping this a top-level function (rather than a lambda inside the composable) makes
- * the control flow unit-testable and keeps [ChecklistRow] focused on layout.
+ * Routes a raw [TextFieldValue] emission from a checklist row into the right
+ * ViewModel callback. Kept top-level (rather than a lambda inside the composable)
+ * so the control flow is unit-testable and [ChecklistRow] stays focused on layout.
+ *
+ * Outcomes:
+ * - ZWSP sentinel gone + text empty + the row was *already* blank → delete the row.
+ * - ZWSP sentinel gone + text empty + the row had visible text → user cleared it
+ *   (Select All + Delete, cut, paste replacement); keep the row with empty text
+ *   rather than deleting it.
+ * - ZWSP sentinel gone + text not empty → user edited at position 0; rebuild the
+ *   sentinel and propagate the new text.
+ * - Newline present + [splittingEnabled] → split at the newline, keep the prefix,
+ *   hand the remainder to [onEnter]. For checked rows ([splittingEnabled] false)
+ *   the suffix would be discarded by the no-op onEnter, so we strip the newline
+ *   and keep the full text intact instead.
+ * - Plain typing → propagate the new text.
  */
 private fun handleItemEdit(
     new: TextFieldValue,
@@ -361,12 +380,19 @@ private fun handleItemEdit(
     onTextChange: (String) -> Unit,
     onEnter: (remainder: String) -> Unit,
     onBackspaceOnEmpty: () -> Unit,
+    splittingEnabled: Boolean,
 ) {
     if (!new.text.startsWith(ZWSP)) {
-        // The ZWSP prefix was deleted: either the user backspaced on an empty row
-        // (delete the row) or they edited at position 0 (rebuild with ZWSP intact).
         if (new.text.isEmpty()) {
-            onBackspaceOnEmpty()
+            if (currentItemText.isEmpty()) {
+                onBackspaceOnEmpty()
+            } else {
+                // User cleared a non-empty row (Select All + Delete, cut, etc.).
+                // Keep the row but with empty text — re-seat the sentinel so future
+                // edits go through the normal ZWSP-prefixed path.
+                setLocal(TextFieldValue(ZWSP, TextRange(ZWSP.length)))
+                onTextChange("")
+            }
             return
         }
         val corrected = ZWSP + new.text
@@ -382,6 +408,14 @@ private fun handleItemEdit(
 
     if (new.text.contains('\n')) {
         val withoutPrefix = new.text.removePrefix(ZWSP)
+        if (!splittingEnabled) {
+            // Checked rows never split — strip the newline and keep the full text.
+            val stripped = withoutPrefix.replace("\n", "")
+            val keep = ZWSP + stripped
+            setLocal(TextFieldValue(keep, TextRange(keep.length)))
+            if (stripped != currentItemText) onTextChange(stripped)
+            return
+        }
         val newlineIdx = withoutPrefix.indexOf('\n')
         val before = withoutPrefix.substring(0, newlineIdx)
         val after = withoutPrefix.substring(newlineIdx + 1)

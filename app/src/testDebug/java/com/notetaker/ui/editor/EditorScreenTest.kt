@@ -179,4 +179,46 @@ class EditorScreenTest {
 
         assertThat(deleted).isEqualTo(blank)
     }
+
+    @Test
+    fun clearing_non_empty_row_keeps_the_row_with_empty_text() {
+        val milk = item(1L, "milk")
+        var deleted: ChecklistItem? = null
+        val edits = mutableListOf<Pair<Long, String>>()
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = listOf(milk), checked = emptyList()),
+            onDeleteItem = { deleted = it },
+            onItemTextChange = { item, text -> edits += item.id to text },
+        )
+
+        // Select-All + Delete (or cut/replace) blanks the whole field on a row that
+        // had visible text. That should clear the item, not delete the row.
+        composeRule.onNodeWithTag("item-text-1").performTextReplacement("")
+
+        assertThat(deleted).isNull()
+        assertThat(edits.last()).isEqualTo(1L to "")
+    }
+
+    @Test
+    fun entering_newline_in_checked_row_strips_newline_and_preserves_text() {
+        val coffee = item(1L, "coffee", checked = true)
+        val enters = mutableListOf<Pair<Int, String>>()
+        val edits = mutableListOf<Pair<Long, String>>()
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = emptyList(), checked = listOf(coffee)),
+            onEnterOnItem = { afterPos, remainder -> enters += afterPos to remainder },
+            onItemTextChange = { item, text -> edits += item.id to text },
+        )
+
+        // Append a newline and some suffix as if the user pressed Enter in the middle
+        // of editing. Checked rows must not split — the suffix after the cursor would
+        // be discarded by the no-op onEnter. Instead, the newline is stripped and the
+        // full text is preserved.
+        composeRule.onNodeWithTag("item-text-1").performTextInput("\nblack")
+
+        assertThat(enters).isEmpty()
+        assertThat(edits.last()).isEqualTo(1L to "coffeeblack")
+    }
 }
