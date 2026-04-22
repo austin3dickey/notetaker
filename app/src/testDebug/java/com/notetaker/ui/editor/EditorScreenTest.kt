@@ -181,6 +181,31 @@ class EditorScreenTest {
     }
 
     @Test
+    fun clearing_row_with_stale_model_uses_local_state_and_keeps_row() {
+        // The stub's state is fixed — item.text stays "" for the whole test. The user
+        // types "milk" (advancing only local state) and then clears. The clear-vs-delete
+        // decision must look at the *local* field state (which shows "milk") rather
+        // than the stale model text (still ""), otherwise a repo emission that lags
+        // behind fast typing would cause a clear to delete the whole row.
+        val blank = item(1L, "")
+        var deleted: ChecklistItem? = null
+        val edits = mutableListOf<Pair<Long, String>>()
+
+        stubContent(
+            state = EditorState.Loaded(note = note, unchecked = listOf(blank), checked = emptyList()),
+            onDeleteItem = { deleted = it },
+            onItemTextChange = { item, text -> edits += item.id to text },
+        )
+
+        composeRule.onNodeWithTag("item-text-1").performTextInput("milk")
+        composeRule.onNodeWithTag("item-text-1").performTextReplacement("")
+
+        assertThat(deleted).isNull()
+        // The final edit emits "" so the VM can catch up with the local state.
+        assertThat(edits.last()).isEqualTo(1L to "")
+    }
+
+    @Test
     fun clearing_non_empty_row_keeps_the_row_with_empty_text() {
         val milk = item(1L, "milk")
         var deleted: ChecklistItem? = null

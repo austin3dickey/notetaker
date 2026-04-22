@@ -320,6 +320,7 @@ private fun ChecklistRow(
             onValueChange = { new ->
                 handleItemEdit(
                     new = new,
+                    previousLocalText = tfv.text.removePrefix(ZWSP),
                     currentItemText = item.text,
                     setLocal = { tfv = it },
                     onTextChange = onTextChange,
@@ -360,11 +361,17 @@ private fun ChecklistRow(
  * ViewModel callback. Kept top-level (rather than a lambda inside the composable)
  * so the control flow is unit-testable and [ChecklistRow] stays focused on layout.
  *
+ * [previousLocalText] is the field's visible text *before* this edit, sourced from
+ * the local [TextFieldValue] rather than the model. That matters for the
+ * clear-vs-delete decision: if the repository is lagging behind fast keystrokes,
+ * the model's [currentItemText] can be empty while the user is staring at text
+ * they just typed. Using the local state means a clear always behaves the way
+ * the user sees the field.
+ *
  * Outcomes:
- * - ZWSP sentinel gone + text empty + the row was *already* blank → delete the row.
- * - ZWSP sentinel gone + text empty + the row had visible text → user cleared it
- *   (Select All + Delete, cut, paste replacement); keep the row with empty text
- *   rather than deleting it.
+ * - ZWSP sentinel gone + text empty + row was *visibly* blank → delete the row.
+ * - ZWSP sentinel gone + text empty + row had visible text → user cleared it
+ *   (Select All + Delete, cut, paste replacement); keep the row with empty text.
  * - ZWSP sentinel gone + text not empty → user edited at position 0; rebuild the
  *   sentinel and propagate the new text.
  * - Newline present + [splittingEnabled] → split at the newline, keep the prefix,
@@ -375,6 +382,7 @@ private fun ChecklistRow(
  */
 private fun handleItemEdit(
     new: TextFieldValue,
+    previousLocalText: String,
     currentItemText: String,
     setLocal: (TextFieldValue) -> Unit,
     onTextChange: (String) -> Unit,
@@ -384,12 +392,13 @@ private fun handleItemEdit(
 ) {
     if (!new.text.startsWith(ZWSP)) {
         if (new.text.isEmpty()) {
-            if (currentItemText.isEmpty()) {
+            if (previousLocalText.isEmpty()) {
                 onBackspaceOnEmpty()
             } else {
                 // User cleared a non-empty row (Select All + Delete, cut, etc.).
                 // Keep the row but with empty text — re-seat the sentinel so future
-                // edits go through the normal ZWSP-prefixed path.
+                // edits go through the normal ZWSP-prefixed path. Always propagate
+                // the empty text so the VM catches up even if its view was stale.
                 setLocal(TextFieldValue(ZWSP, TextRange(ZWSP.length)))
                 onTextChange("")
             }
