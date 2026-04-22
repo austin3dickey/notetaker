@@ -8,6 +8,7 @@ import com.notetaker.data.ChecklistItem
 import com.notetaker.data.Note
 import com.notetaker.data.NoteColor
 import com.notetaker.data.NoteRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,6 +21,7 @@ import kotlinx.coroutines.launch
 class NoteEditorViewModel(
     private val noteId: Long,
     private val repository: NoteRepository,
+    private val externalScope: CoroutineScope,
 ) : ViewModel() {
 
     // Buffered so a delete emitted just before the UI resubscribes (e.g. during a
@@ -75,14 +77,14 @@ class NoteEditorViewModel(
     }
 
     /**
-     * Deletes the owning note. Runs in [viewModelScope] so the write survives a
-     * configuration change that tears down the editor composable mid-delete — doing
-     * this in a composable-scoped coroutine would let the Room transaction be
-     * cancelled before it commits. Completion is announced via [events] so the UI
-     * can pop the back stack only after the delete is durable.
+     * Deletes the owning note. Runs in [externalScope] (the application scope) so
+     * the write survives the ViewModel being cleared — if the user confirms delete
+     * and then back-navigates before the event lands, [viewModelScope] would cancel
+     * mid-transaction and the note would still exist. Completion is announced via
+     * [events] so the UI can pop the back stack only after the delete is durable.
      */
     fun deleteNote() {
-        viewModelScope.launch {
+        externalScope.launch {
             repository.deleteNote(noteId)
             _events.send(EditorEvent.Deleted)
         }
@@ -91,10 +93,14 @@ class NoteEditorViewModel(
     companion object {
         private const val SUBSCRIPTION_TIMEOUT_MS = 5_000L
 
-        fun factory(noteId: Long, repository: NoteRepository): Factory = object : Factory {
+        fun factory(
+            noteId: Long,
+            repository: NoteRepository,
+            externalScope: CoroutineScope,
+        ): Factory = object : Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                NoteEditorViewModel(noteId, repository) as T
+                NoteEditorViewModel(noteId, repository, externalScope) as T
         }
 
         const val NOTE_ID_KEY: String = "noteId"

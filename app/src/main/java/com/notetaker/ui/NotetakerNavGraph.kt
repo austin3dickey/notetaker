@@ -12,6 +12,7 @@ import com.notetaker.ui.editor.EditorScreen
 import com.notetaker.ui.editor.NoteEditorViewModel
 import com.notetaker.ui.overview.NoteOverviewViewModel
 import com.notetaker.ui.overview.OverviewScreen
+import kotlinx.coroutines.CoroutineScope
 
 /**
  * String-route navigation. We deliberately avoid the type-safe serialization variant so
@@ -25,7 +26,7 @@ internal object Routes {
 }
 
 @Composable
-fun NotetakerNavGraph(repository: NoteRepository) {
+fun NotetakerNavGraph(repository: NoteRepository, applicationScope: CoroutineScope) {
     val navController = rememberNavController()
 
     NavHost(navController = navController, startDestination = Routes.OVERVIEW) {
@@ -48,7 +49,9 @@ fun NotetakerNavGraph(repository: NoteRepository) {
                 "noteId argument missing from editor route"
             }
             val vm: NoteEditorViewModel =
-                viewModel(factory = NoteEditorViewModel.factory(noteId, repository))
+                viewModel(
+                    factory = NoteEditorViewModel.factory(noteId, repository, applicationScope),
+                )
             EditorScreen(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },

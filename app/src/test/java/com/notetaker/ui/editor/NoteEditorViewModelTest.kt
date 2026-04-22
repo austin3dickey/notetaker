@@ -47,7 +47,11 @@ class NoteEditorViewModelTest {
 
     @Test
     fun `state emits NotFound when note does not exist`() = runTest {
-        val vm = NoteEditorViewModel(noteId = 999L, repository = repository)
+        val vm = NoteEditorViewModel(
+            noteId = 999L,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
 
         vm.state.test {
             assertThat(awaitSettled()).isEqualTo(EditorState.NotFound)
@@ -63,7 +67,11 @@ class NoteEditorViewModelTest {
         val bread = repository.observeItems(noteId).first().single { it.text == "bread" }
         repository.setItemChecked(bread, checked = true)
 
-        val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
+        val vm = NoteEditorViewModel(
+            noteId = noteId,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
 
         vm.state.test {
             val loaded = awaitLoaded()
@@ -81,7 +89,11 @@ class NoteEditorViewModelTest {
         repository.appendItem(noteId, "b")
         repository.appendItem(noteId, "c")
 
-        val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
+        val vm = NoteEditorViewModel(
+            noteId = noteId,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
 
         vm.state.test {
             val initial = awaitLoaded()
@@ -108,7 +120,11 @@ class NoteEditorViewModelTest {
         repository.appendItem(noteId, "a")
         repository.appendItem(noteId, "c")
 
-        val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
+        val vm = NoteEditorViewModel(
+            noteId = noteId,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
 
         vm.state.test {
             val initial = awaitLoaded()
@@ -125,7 +141,11 @@ class NoteEditorViewModelTest {
     @Test
     fun `setTitle updates the title in state`() = runTest {
         val noteId = repository.createNote(title = "old")
-        val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
+        val vm = NoteEditorViewModel(
+            noteId = noteId,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
 
         vm.state.test {
             assertThat(awaitLoaded().note.title).isEqualTo("old")
@@ -141,7 +161,11 @@ class NoteEditorViewModelTest {
     @Test
     fun `deleteNote removes the note and emits a Deleted event`() = runTest {
         val noteId = repository.createNote(title = "gone")
-        val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
+        val vm = NoteEditorViewModel(
+            noteId = noteId,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
 
         vm.events.test {
             vm.deleteNote()
@@ -158,7 +182,11 @@ class NoteEditorViewModelTest {
         // while no one was collecting. Without buffering, the event would be
         // dropped and the screen would never pop.
         val noteId = repository.createNote(title = "gone")
-        val vm = NoteEditorViewModel(noteId = noteId, repository = repository)
+        val vm = NoteEditorViewModel(
+            noteId = noteId,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
 
         vm.deleteNote()
         // Let the launched coroutine run to completion so the event lands in the
@@ -171,6 +199,7 @@ class NoteEditorViewModelTest {
         }
         assertThat(repository.observeNote(noteId).first()).isNull()
     }
+
 
     private suspend fun ReceiveTurbine<EditorState>.awaitSettled(): EditorState {
         var next = awaitItem()
