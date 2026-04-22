@@ -159,6 +159,46 @@ class NoteEditorViewModelTest {
     }
 
     @Test
+    fun `wasLoaded flips true once the note loads and stays true after deletion`() = runTest {
+        // Covers the rotate-during-delete case: the UI relies on wasLoaded to decide
+        // whether a NotFound state should pop or render "not found". Because
+        // wasLoaded lives on the VM, it must survive the state flow moving from
+        // Loaded back to NotFound — without that, a recreated composable would see
+        // wasLoaded=false on first collection and fail to pop.
+        val noteId = repository.createNote(title = "x")
+        val vm = NoteEditorViewModel(
+            noteId = noteId,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
+
+        vm.state.test {
+            awaitLoaded()
+            assertThat(vm.wasLoaded.value).isTrue()
+
+            vm.deleteNote()
+            assertThat(awaitSettled()).isEqualTo(EditorState.NotFound)
+            assertThat(vm.wasLoaded.value).isTrue()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `wasLoaded stays false when the note never exists`() = runTest {
+        val vm = NoteEditorViewModel(
+            noteId = 999L,
+            repository = repository,
+            externalScope = backgroundScope,
+        )
+
+        vm.state.test {
+            assertThat(awaitSettled()).isEqualTo(EditorState.NotFound)
+            assertThat(vm.wasLoaded.value).isFalse()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `deleteNote removes the note and state transitions to NotFound`() = runTest {
         // Completion is observed through the state flow: the UI pops when it sees
         // Loaded → NotFound. Runs the delete on an external scope so the write

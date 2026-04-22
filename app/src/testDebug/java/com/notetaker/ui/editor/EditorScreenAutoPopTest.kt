@@ -12,9 +12,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Exercises the Loaded → NotFound auto-pop that guards against a reopen-during-delete
- * race. Driven through synthetic state transitions rather than a full ViewModel so
- * the assertion stays on the UI-layer effect alone.
+ * Exercises the state-based auto-pop that navigates away after a note is removed.
+ * Driven through synthetic inputs instead of a full ViewModel so the assertion
+ * stays on the UI-layer effect alone.
  */
 @RunWith(RobolectricTestRunner::class)
 class EditorScreenAutoPopTest {
@@ -27,10 +27,16 @@ class EditorScreenAutoPopTest {
     @Test
     fun loaded_then_not_found_pops_once() {
         var state: EditorState by mutableStateOf(EditorState.Loading)
+        var wasLoaded by mutableStateOf(false)
         var pops = 0
-        composeRule.setContent { AutoPopOnNoteRemoval(state = state, onPop = { pops++ }) }
+        composeRule.setContent {
+            AutoPopOnNoteRemoval(state = state, wasLoaded = wasLoaded, onPop = { pops++ })
+        }
 
-        composeRule.runOnUiThread { state = loaded }
+        composeRule.runOnUiThread {
+            state = loaded
+            wasLoaded = true
+        }
         composeRule.waitForIdle()
         composeRule.runOnUiThread { state = EditorState.NotFound }
         composeRule.waitForIdle()
@@ -42,7 +48,11 @@ class EditorScreenAutoPopTest {
     fun initial_not_found_does_not_pop() {
         var pops = 0
         composeRule.setContent {
-            AutoPopOnNoteRemoval(state = EditorState.NotFound, onPop = { pops++ })
+            AutoPopOnNoteRemoval(
+                state = EditorState.NotFound,
+                wasLoaded = false,
+                onPop = { pops++ },
+            )
         }
         composeRule.waitForIdle()
 
@@ -51,15 +61,22 @@ class EditorScreenAutoPopTest {
     }
 
     @Test
-    fun loading_then_not_found_does_not_pop() {
-        var state: EditorState by mutableStateOf(EditorState.Loading)
+    fun not_found_with_wasLoaded_true_pops_even_on_initial_composition() {
+        // Simulates the user confirming delete, rotating, and the recreated
+        // composable attaching *after* Room committed — the new composition
+        // sees NotFound as its first state. Because wasLoaded comes from the
+        // ViewModel (which survived the rotation), we still auto-pop rather
+        // than stranding the user on the "not found" screen.
         var pops = 0
-        composeRule.setContent { AutoPopOnNoteRemoval(state = state, onPop = { pops++ }) }
-
-        composeRule.runOnUiThread { state = EditorState.NotFound }
+        composeRule.setContent {
+            AutoPopOnNoteRemoval(
+                state = EditorState.NotFound,
+                wasLoaded = true,
+                onPop = { pops++ },
+            )
+        }
         composeRule.waitForIdle()
 
-        // Loading → NotFound without passing through Loaded also shouldn't auto-pop.
-        assertThat(pops).isEqualTo(0)
+        assertThat(pops).isEqualTo(1)
     }
 }
