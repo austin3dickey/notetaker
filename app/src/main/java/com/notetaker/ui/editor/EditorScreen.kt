@@ -80,6 +80,7 @@ fun EditorScreen(
             }
         }
     }
+    AutoPopOnNoteRemoval(state = state, onPop = currentOnBack)
     EditorScreenContent(
         state = state,
         onBack = onBack,
@@ -175,6 +176,30 @@ internal fun EditorScreenContent(
                 onDeleteNote()
             },
         )
+    }
+}
+
+/**
+ * Safety net for a rare race: the app-scoped delete from a previous VM instance
+ * commits while a new VM is showing this same note (user confirmed delete, backed
+ * out, reopened before Room committed). The Deleted event only reaches the *old*
+ * VM, so the new VM learns about it via its state flipping Loaded → NotFound —
+ * at which point we pop. A NotFound that was there from the start (bogus nav arg)
+ * still renders the "not found" message because [wasLoaded] never flips true.
+ *
+ * Internal so Compose tests can drive it with synthetic state transitions without
+ * standing up a full ViewModel.
+ */
+@Composable
+internal fun AutoPopOnNoteRemoval(state: EditorState, onPop: () -> Unit) {
+    var wasLoaded by remember { mutableStateOf(false) }
+    val currentOnPop by rememberUpdatedState(onPop)
+    LaunchedEffect(state) {
+        when (state) {
+            is EditorState.Loaded -> wasLoaded = true
+            EditorState.NotFound -> if (wasLoaded) currentOnPop()
+            EditorState.Loading -> Unit
+        }
     }
 }
 
