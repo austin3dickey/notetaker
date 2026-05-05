@@ -1,8 +1,8 @@
 [versions]
 # Toolchain
 agp = "9.1.1"
-kotlin = "2.3.20"
-ksp = "2.3.6"
+kotlin = "2.3.21"
+ksp = "2.3.7"
 
 # AndroidX core
 activity-compose = "1.13.0"
