@@ -11,7 +11,7 @@ lifecycle = "2.10.0"
 navigation-compose = "2.9.7"
 
 # Compose
-compose-bom = "2026.03.01"
+compose-bom = "2026.06.01"
 
 # Room
 room = "2.8.4"
